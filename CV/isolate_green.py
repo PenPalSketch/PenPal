@@ -15,7 +15,6 @@ def main():
     # HSV range sampled from Grant's laptop camera, should be updated later.
     lower_green = (45, 60, 40)
     upper_green = (65, 255, 255)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
 
     while True:
         ok, frame = camera.read()
@@ -24,7 +23,6 @@ def main():
 
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, lower_green, upper_green)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         green = cv2.bitwise_and(frame, frame, mask=mask)
         cv2.imshow(window, green)
 
