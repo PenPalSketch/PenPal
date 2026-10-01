@@ -120,4 +120,3 @@ class SketchRNN:
         self.checkpoint_url = checkpoint_url
         self.initialized = False
 
-print("hello")
