@@ -11,7 +11,10 @@ import numpy as np
 def main():
     camera = cv2.VideoCapture(0)
     window = "Raw | Green only | Canvas - Q or Esc to quit"
-    cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+    cv2.namedWindow(window, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+
+    # Width of the whole three-panel window, small enough to fit on a laptop screen.
+    display_width = 1440
 
     # HSV range covers Grant's laptop camera (hue 45-65) and the Logitech C920 (hue 69-76).
     lower_green = (45, 60, 40)
@@ -31,6 +34,11 @@ def main():
 
         if canvas is None:
             canvas = np.full(frame.shape, 255, dtype=np.uint8)
+
+            # Three frames sit side by side, so the window is three frames wide and one frame tall.
+            frame_height, frame_width = frame.shape[:2]
+            display_height = round(display_width * frame_height / (3 * frame_width))
+            cv2.resizeWindow(window, display_width, display_height)
 
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, lower_green, upper_green)
