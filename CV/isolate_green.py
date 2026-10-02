@@ -6,6 +6,8 @@ python ./isolate_green.py
 
 import cv2
 
+from util import draw_tracked_contour, largest_contour
+
 
 def main():
     camera = cv2.VideoCapture(0)
@@ -24,6 +26,9 @@ def main():
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, lower_green, upper_green)
         green = cv2.bitwise_and(frame, frame, mask=mask)
+        largest = largest_contour(mask)
+        if largest is not None:
+            draw_tracked_contour(green, largest)
         cv2.imshow(window, green)
 
         if cv2.waitKey(1) & 0xFF in (ord("q"), ord("Q"), 27):
