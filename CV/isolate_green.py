@@ -7,6 +7,8 @@ python ./isolate_green.py
 import cv2
 import numpy as np
 
+from util import draw_tracked_contour, largest_contour
+
 
 def main():
     camera = cv2.VideoCapture(0)
@@ -44,17 +46,14 @@ def main():
         mask = cv2.inRange(hsv, lower_green, upper_green)
         green = cv2.bitwise_and(frame, frame, mask=mask)
 
-        contours, _hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        largest_contour = None
-        if contours:
-            largest_contour = max(contours, key=cv2.contourArea)
+        largest_green_contour = largest_contour(mask)
 
-        if largest_contour is None or cv2.contourArea(largest_contour) < minimum_blob_area:
+        if largest_green_contour is None or cv2.contourArea(largest_green_contour) < minimum_blob_area:
             # Forget the last position so the next detection does not report a jump.
             print("lost")
             previous_position = None
         else:
-            moments = cv2.moments(largest_contour)
+            moments = cv2.moments(largest_green_contour)
             pen_x = round(moments["m10"] / moments["m00"])
             pen_y = round(moments["m01"] / moments["m00"])
 
@@ -71,7 +70,7 @@ def main():
 
             print(f"x={pen_x} y={pen_y} dx={delta_x} dy={delta_y}")
             previous_position = (pen_x, pen_y)
-            cv2.circle(green, (pen_x, pen_y), 6, (0, 0, 255), -1)
+            draw_tracked_contour(green, largest_green_contour)
 
         side_by_side = cv2.hconcat([frame, green, canvas])
         cv2.imshow(window, side_by_side)
