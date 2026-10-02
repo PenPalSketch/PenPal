@@ -34,6 +34,7 @@ import tensorflow as tf
 
 from typing import TypedDict
 import numpy as np
+import math
 
 class SketchRNNInfo(TypedDict):
     max_seq_len: int
@@ -120,3 +121,75 @@ class SketchRNN:
         self.checkpoint_url = checkpoint_url
         self.initialized = False
 
+
+
+
+    #* Given the RNN state, returns the probability distribution function (pdf)
+    #* of the next stroke. Optionally adjust the temperature of the pdf here.
+    #*
+    #* @param state previous LSTMState.
+    #* @param temperature (Optional) for dx and dy (default 0.65)
+    #* @param softmaxTemperature (Optional) for Pi and Pen discrete states
+    #* (default is temperature * 0.5 + 0.5, which is a nice heuristic.)
+    #*
+    #* @returns StrokePDF (pi, muX, muY, sigmaX, sigmaY, corr, pen)
+    def getPDF(self, state: LSTMState, temperature: float = 0.65, softmaxTemperature: float | None = None):
+
+        temp = temperature
+        discreteTemp = 0.5 + 0.5 * temperature
+        if softmaxTemperature:
+            discreteTemp = softmaxTemperature
+
+        NOUT = self.NMIXTURE
+
+        h = tf.reshape(tf.convert_to_tensor(state['h'], dtype=tf.float32),
+                       (1, self.numUnits))
+
+        sqrttemp = math.sqrt(temp)
+
+        z = tf.squeeze(tf.matmul(h, self.output_kernel) + self.output_bias)
+
+        rawPen, rst = tf.split(z, [3, NOUT*6])
+        rawPi, mu1, mu2, rawSigma1, rawSigma2, rawCorr = tf.split(rst, 6)
+        
+        pen = tf.nn.softmax(rawPen / discreteTemp)
+        pi = tf.nn.softmax(rawPi / discreteTemp)
+        sigma1 = tf.exp(rawSigma1) * sqrttemp
+        sigma2 = tf.exp(rawSigma2) * sqrttemp
+        corr = tf.tanh(rawCorr)
+
+        pdf = StrokePDF(
+            pi = pi.numpy(), # convert to a python list of numbers
+            muX = mu1.numpy(),
+            muY = mu2.numpy(),
+            sigmaX = sigma1.numpy(),
+            sigmaY = sigma2.numpy(),
+            corr = corr.numpy(),
+            pen = pen.numpy(),
+        )
+
+        return pdf
+
+
+    #* Returns the zero/initial state of the model
+    #*
+    #* @returns zero state of the lstm: [c, h], where c and h are zero vectors.
+    def zeroState(self):
+        result = LSTMState(
+            c=np.zeros(self.numUnits, dtype=np.float32),
+            h=np.zeros(self.numUnits, dtype=np.float32)
+        )
+        return result
+
+
+    #* Returns a new copy of the rnn state
+    #*
+    #* @param rnnState original LSTMState
+    #*
+    #* @returns copy of LSTMState
+    def copyState(self, rnnState: LSTMState):
+        result = LSTMState(
+            c=np.array(rnnState['c'], dtype=np.float32),
+            h=np.array(rnnState['h'], dtype=np.float32),
+        )
+        return result
