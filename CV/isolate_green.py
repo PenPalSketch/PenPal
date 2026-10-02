@@ -12,9 +12,9 @@ def main():
     window = "Green only - Q or Esc to quit"
     cv2.namedWindow(window, cv2.WINDOW_NORMAL)
 
-    # HSV range sampled from Grant's laptop camera, should be updated later.
+    # HSV range covers Grant's laptop camera (hue 45-65) and the Logitech C920 (hue 69-76).
     lower_green = (45, 60, 40)
-    upper_green = (65, 255, 255)
+    upper_green = (85, 255, 255)
 
     # Green blobs smaller than this many pixels are treated as noise.
     minimum_blob_area = 50
