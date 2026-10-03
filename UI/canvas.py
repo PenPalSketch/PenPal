@@ -12,9 +12,18 @@ if 'model' not in ss:
 
 def clear():
     ss.canvas_key += 1 # new key results in a new empty canvas
+    ss.all_raw_lines = []
+    ss.strokes = []
+    ss.object_count = 0
     
 def pick_random_model():
     ss.model = random.choice(AVAILABLE_MODELS)
+
+# this variable contains lines in form of lists of points: list([x, y]), !! not deltas
+ss.setdefault("all_raw_lines", [])
+# contains all the strokes
+ss.setdefault("strokes", [])
+ss.setdefault("object_count", 0)
 
 st.title("Pen Pal Canvas")
 st.subheader("Interactive Sketch Prediction")
@@ -33,7 +42,17 @@ with col3:
         key="model",
     )
 
-temperature = st.slider("Temperature", min_value=0.0, max_value=1.0, step=0.01, value=1.0)
+def on_temp_change():
+    print(f"Temperature changed: {ss.temperature}")
+
+temperature = st.slider(
+    "Temperature",
+    min_value=0.0,
+    max_value=1.0,
+    step=0.01,
+    value=1.0,
+    key="temperature",
+    on_change=on_temp_change)
 
 canvas_result = st_canvas(
     drawing_mode="freedraw",
@@ -47,3 +66,70 @@ canvas_result = st_canvas(
     return_image_data=True,
     key=f"canvas{ss.canvas_key}",
 )
+
+
+# converts the path of the stroke into the (x, y) format.
+#
+# streamlit returns a path of a line in an SVG path format,
+# so these aren't exact mouse positions, but approximations
+def get_points(path):
+    points = []
+    for c in path:
+        if c[0] == 'M':
+            points.append([c[1], -c[2]])
+        elif c[0] == 'Q':
+            x, y = c[3], -c[4]
+            points.append([x, y])
+        elif c[0] == 'L':
+            x, y = c[1], -c[2]
+            points.append([x, y])
+
+    return points
+
+def on_new_line(raw_lines):
+    if not len(raw_lines) > 0: 
+        return
+
+    raw_line_svg = raw_lines[-1]
+
+    # path of the entire line user drew
+    path = raw_line_svg["path"]
+
+    # list of raw points converted from streamlit's SVG path
+    # raw_line_points is equivalent to currentRawLine in mouseReleased from JS
+    raw_line = get_points(path)
+
+    ss.all_raw_lines.append(raw_line)
+
+
+    raw_line_simplified = []
+    # raw_line_simplified = model.simplifyLine(raw_line_points)
+
+    # the end point of previous line is needed
+    # see p.mouseReleased in JS
+    #   this will make the first displacement of this line very big
+    #   which is useful information because model knows:
+    #   the human ended this line here and then started a new line all the way here
+    #   and that is somehow useful
+
+    prev_line_end_point = (0, 0);
+    if len(ss.all_raw_lines) > 1:
+        prev_line_end_point = ss.all_raw_lines[-2][-1]
+
+    # stroke = model.lineToStroke(raw_line_simplified, prev_line_end_point)
+
+    # strokes = ss.strokes.concat(stroke)
+    # initRNNStateFromStrakes(strokes)
+
+
+
+# this is called whenever a new stroke was drawn
+if canvas_result.json_data is not None:
+    print("new line")
+
+    objects = canvas_result.json_data.get("objects", [])
+    if len(objects) > ss.object_count:
+        on_new_line(objects)
+        ss.object_count = len(objects)
+    
+    
