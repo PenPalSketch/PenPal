@@ -83,9 +83,6 @@ class LSTMState(TypedDict):
 #* Main SketchRNN model class.
 #*
 #* Implementation of decoder model in https://arxiv.org/abs/1704.03477
-#* 
-#* TODO(hardmaru): make a "batch" continueSequence-like method
-#* that runs fully on GPU.
 
 class SketchRNN:
     checkpoint_url: str
@@ -120,3 +117,108 @@ class SketchRNN:
         self.checkpoint_url = checkpoint_url
         self.initialized = False
 
+    # * Match the legacy TensorFlow.js basicLSTMCell
+    def basic_lstm_cell(self, forget_bias, lstm_kernel, lstm_bias, x, c, h):
+        combined = tf.concat([x, h], axis=1)  
+        gates = tf.matmul(combined, lstm_kernel) + lstm_bias 
+        i, j, f, o = tf.split(gates, 4, axis=1)
+
+        new_c = tf.sigmoid(f + forget_bias) * c + tf.sigmoid(i) * tf.tanh(j)
+        new_h = tf.sigmoid(o) * tf.tanh(new_c)
+
+        return new_c, new_h
+
+    # * Updates the RNN, returns the next state.
+    # *
+    # * @param stroke [dx, dy, penDown, penUp, penEnd].
+    # * @param state previous LSTMState.
+    # *
+    # * @returns next LSTMState.
+    
+    def update(self, stroke, state):
+        numUnits = self.numUnits
+        s = self.scaleFactor
+
+        normStroke = [
+            stroke[0]/s, 
+            stroke[1]/s, 
+            stroke[2], 
+            stroke[3], 
+            stroke[4]
+        ]
+
+        x = tf.convert_to_tensor([normStroke], dtype=tf.float32) # current stroke tensor
+        c = tf.convert_to_tensor([state["c"]], dtype=tf.float32) # cell memory context tensor
+        h = tf.convert_to_tensor([state["h"]], dtype=tf.float32) # hidden state context tensor
+
+        # apply lstm cell math to update c and h for next iteration
+        new_c, new_h = self.basic_lstm_cell(
+            self.forget_bias,
+            self.lstm_kernel,
+            self.lstm_bias,
+            x,
+            c,
+            h
+        )
+
+        # return updated c and h
+        return {
+            "c": new_c.numpy()[0],
+            "h": new_h.numpy()[0],
+        }
+
+    #* Updates the RNN on a series of Strokes, returns the next state.
+    #*
+    #* @param strokes list of [dx, dy, penDown, penUp, penEnd].
+    #* @param state previous LSTMState.
+    #* @param steps (Optional) number of steps of the stroke to update
+    #* (default is length of strokes list)
+    #* 
+    #*
+    #* @returns the final LSTMState.
+
+    def updateStrokes(self, strokes, state, steps):
+        numUnits = self.numUnits
+        s = self.scaleFactor
+
+        x = None
+        c = None
+        h = None
+        newState = None
+        numSteps = len(strokes)
+
+        # if the number of steps is specified, use the parameter instead of the array length
+        if steps is not None:
+            numSteps = steps
+
+        c = tf.convert_to_tensor([state["c"]], dtype=tf.float32) # cell memory context tensor
+        h = tf.convert_to_tensor([state["h"]], dtype=tf.float32) # hidden state context tensor
+
+        # iterate through the sequence of steps
+        for stroke in strokes[:numSteps]:
+            normStroke = [
+                stroke[0] / s,
+                stroke[1] / s,
+                stroke[2],
+                stroke[3],
+                stroke[4],
+            ]
+
+            x = tf.convert_to_tensor([normStroke], dtype=tf.float32)
+
+            new_c, new_h = self.basic_lstm_cell(
+                self.forget_bias,
+                self.lstm_kernel,
+                self.lstm_bias,
+                x,
+                c,
+                h
+            )
+
+            c = new_c
+            h = new_h
+
+        return {
+            "c": new_c.numpy()[0],
+            "h": new_h.numpy()[0],
+        }
