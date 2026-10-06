@@ -118,9 +118,6 @@ class SketchRNN:
         self.checkpoint_url = checkpoint_url
         self.initialized = False
 
-
-
-
     #* Given the RNN state, returns the probability distribution function (pdf)
     #* of the next stroke. Optionally adjust the temperature of the pdf here.
     #*
