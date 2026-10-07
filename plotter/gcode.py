@@ -15,12 +15,18 @@ def strokes_to_gcode(
     anchor,
     bounds,
     feed=1500,              # drawing speed, mm/min
-    pen_up_cmd="M5",        # TODO: set once we know the pen lift mechanism (servo / Z axis)
-    pen_down_cmd="M3 S90",
+    pen_up_cmd="M5",        # servo commands for a GRBL servo fork; Marlin uses "M280 P0 S<angle>"
+    pen_down_cmd="M3 S90",  # TODO: calibrate S values on the actual servo
+    pen_delay=0.15,         # seconds to wait for the servo to finish moving
     home=(0, 0),
     max_steps=250,          # the model doesn't always emit penEnd
 ):
-    lines = ["G21", "G90", pen_up_cmd]   # mm, absolute coordinates, pen up to be safe
+    # The servo moves on its own and the firmware doesn't wait for it,
+    # so pause after every pen command or the pen drags/skips at stroke starts.
+    # G4 P is seconds on GRBL but milliseconds on Marlin.
+    dwell = f"G4 P{pen_delay}"
+
+    lines = ["G21", "G90", pen_up_cmd, dwell]   # mm, absolute coordinates, pen up to be safe
 
     x, y = anchor              # running absolute position (never clipped)
     prev_pen_down = False      # model's pen state; the human just lifted their pen
@@ -50,10 +56,10 @@ def strokes_to_gcode(
 
         # Only send pen commands when the state changes
         if draw and not pen_is_down:
-            lines.append(pen_down_cmd)
+            lines += [pen_down_cmd, dwell]
             pen_is_down = True
         elif not draw and pen_is_down:
-            lines.append(pen_up_cmd)
+            lines += [pen_up_cmd, dwell]
             pen_is_down = False
 
         if draw:
@@ -67,7 +73,7 @@ def strokes_to_gcode(
         # Applies to the NEXT move; a failed sample ([0, 0, 0]) counts as pen up
         prev_pen_down = (stroke[2 + PEN_DOWN] == 1)
 
-    lines += [pen_up_cmd, f"G0 X{home[0]:.2f} Y{home[1]:.2f}"]
+    lines += [pen_up_cmd, dwell, f"G0 X{home[0]:.2f} Y{home[1]:.2f}"]
     return lines
 
 
