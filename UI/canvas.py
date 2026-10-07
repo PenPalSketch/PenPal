@@ -25,7 +25,7 @@ def restart():
     ss.model_state = None
     
 def pick_random_model():
-    ss.model = random.choice(AVAILABLE_MODELS)
+    ss.model_name = random.choice(AVAILABLE_MODELS)
 
 # Layout (UI and DOM elements)
 st.title("Pen Pal Canvas")
