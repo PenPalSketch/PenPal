@@ -16,6 +16,13 @@ ss.setdefault("strokes", [])                       # contains all the strokes [d
 ss.setdefault("object_count", 0)                   # canvas objs already converted to strokes
 ss.setdefault("model_state", None)
 
+
+ss.setdefault("dx", 0)
+ss.setdefault("dy", 0)
+ss.setdefault("model_state", None)
+ss.setdefault("pen_state", [1, 0, 0]) # pen state [pen_down, pen_up, end]
+ss.setdefault("prev_pen_state", [1, 0, 0]) # previous pen state [pen_down, pen_up, end]
+
 # Update Functions
 def restart():
     ss.canvas_key += 1 # new key results in a new empty canvas
