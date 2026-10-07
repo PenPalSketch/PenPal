@@ -89,9 +89,8 @@ class SketchRNN:
         self.checkpoint_url = checkpoint_url
         self.initialized = False
 
-    def is_initialized(self) {
-        return self.initialized;
-    }
+    def is_initialized(self):
+        return self.initialized
     
     def setPixelFactor(self, scale: int):
         # for best effect, set to 1.0 for d3 or paper.js, 2.0 for p5.js
