@@ -7,7 +7,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import streamlit as st
-import random
 from streamlit_drawable_canvas import st_canvas
 from UI.interactive_predict import AVAILABLE_MODELS
 
@@ -17,7 +16,6 @@ CANVAS_HEIGHT = 400
 # State (equivalent to the "let" variables from JS)
 ss = st.session_state
 ss.setdefault("canvas_key", 0)                    # increase to get a fresh, empty canvas
-ss.setdefault("model_name", AVAILABLE_MODELS[0]) 
 ss.setdefault("temperature", 0.25)
 ss.setdefault("all_raw_lines", [])                 # contains lines in form of lists of points: list([x, y]), !! not deltas
 ss.setdefault("strokes", [])                       # contains all the strokes [dx, dy, p1, p2, p3]]
@@ -31,30 +29,23 @@ def restart():
     ss.strokes = []
     ss.object_count = 0
     ss.model_state = None
-    
-def pick_random_model():
-    ss.model_name = random.choice(AVAILABLE_MODELS)
 
 # Layout (UI and DOM elements)
 st.title("Pen Pal Canvas")
 st.subheader("Interactive Sketch Prediction")
-st.write("This demo attempts to finish the drawing given whatever strokes you draw on the screen. You can also select other classes, like 'cat', 'ant', 'bus', etc.")
+st.write("This demo attempts to finish the drawing of a cat, given whatever strokes you draw on the screen.")
 
-col1, col2, col3 = st.columns(3, vertical_alignment="bottom")
+col1, col2 = st.columns(2, vertical_alignment="bottom")
 
 with col1:
     st.button("Clear", on_click=restart, use_container_width=True)
 with col2:
-    st.button("Random", on_click=pick_random_model, use_container_width=True)
-with col3:
-    st.selectbox("Model", AVAILABLE_MODELS, key="model_name")
-
-st.slider(
-    "Temperature",
-    min_value=0.0,
-    max_value=1.0,
-    step=0.05,
-    key="temperature")
+    st.slider(
+        "Temperature",
+        min_value=0.0,
+        max_value=1.0,
+        step=0.05,
+        key="temperature")
 
 canvas_result = st_canvas(
     drawing_mode="freedraw",

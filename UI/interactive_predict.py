@@ -15,8 +15,8 @@ BASE_URL = "https://storage.googleapis.com/quickdraw-models/sketchRNN/models/"
 from ML.model import SketchRNN
 
 # same as js's initModel()
-def load_model(name):
-    model = SketchRNN(f"{BASE_URL}{name}.gen.json")
+def load_model():
+    model = SketchRNN("url")
     model.initialize()
     print("SketchRNN model loaded")
     model.setPixelFactor(5.0)   # bigger -> larger drawings
