@@ -1,7 +1,15 @@
+import sys
+from pathlib import Path
+import random
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import streamlit as st
 import random
 from streamlit_drawable_canvas import st_canvas
-from interactive_predict import AVAILABLE_MODELS
+from UI.interactive_predict import AVAILABLE_MODELS
 
 CANVAS_WIDTH = 700
 CANVAS_HEIGHT = 400
