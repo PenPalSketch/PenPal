@@ -35,6 +35,7 @@ import tensorflow as tf
 from typing import TypedDict, Optional
 import numpy as np
 import math
+import json
 
 import sketch_support as support
 
@@ -115,6 +116,9 @@ class SketchRNN:
     #* `SketchRNN` constructor.
     #*
     #* @param checkpointURL Path to the checkpoint directory.
+    def __init__(self, checkpoint_url: str):
+        self.checkpoint_url = checkpoint_url
+        self.initialized = False
 
 
     def setPixelFactor(self, scale: int):
@@ -123,95 +127,87 @@ class SketchRNN:
         self.scaleFactor = self.info["scale_factor"] / self.pixelFactor
 
     def dispose(self):
-        if (self.rawVars):
-            for rawVar in self.rawVars:
-                rawVar.dispose()
-            self.rawVars = None
-        
-        if (self.forgetBias):
-            self.forgetBias.dispose()
-            self.forgetBias = None
-        
+        self.raw_vars = None
+        self.forget_bias = None
+
+        self.output_kernel = None
+        self.output_bias = None
+        self.lstm_kernel = None
+        self.lstm_bias = None
+
         self.initialized = False
 
     """
     examples:
     SketchRNNInfo: {"mode":2,"version":6,"max_seq_len":130,"name":"cat","scale_factor":82.2}
-    weightDims: [[512,123],[123],[5,2048],[512,2048],[2048]
+    weight_dims: [[512,123],[123],[5,2048],[512,2048],[2048]
     weightStrings: "wRCC6sALHvGcC27lXeCdCaz27QCTEOrwuvttDIr3y/fvBZ....
     """
-    def instantiateFromJSON(self, info: SketchRNNInfo, weightDims: list[list[int]], weightStrings: list[str]):
-        self.forgetBias = tf.convert_to_tensor(1.0, dtype=tf.float32)
+    def instantiate_from_json(self, info: SketchRNNInfo, weight_dims: list[list[int]], weightStrings: list[str]):
+        self.forget_bias = tf.convert_to_tensor(1.0, dtype=tf.float32)
         self.info = info
         self.setPixelFactor(2.0)
-        self.weightDims = weightDims
-        self.numUnits = self.weightDims[0][0]; # size of LSTM
+        self.weight_dims = weight_dims
+        self.numUnits = self.weight_dims[0][0]; # size of LSTM
         
         MAXWEIGHT = 10.0
         self.weights = []
         for weightString in weightStrings:
-            rawWeights =  np.array(support.stringToArray(weightString), dtype=np.float32)
+            rawWeights =  np.array(support.string_to_array(weightString))
             N = len(rawWeights)
             rawWeights = MAXWEIGHT* rawWeights / 32767
             self.weights.append(rawWeights)
         
-        self.outputKernel = tf.reshape(
+        self.output_kernel = tf.reshape(
             tf.convert_to_tensor(self.weights[0]),
-            [self.weightDims[0][0], self.weightDims[0][1]]
+            [self.weight_dims[0][0], self.weight_dims[0][1]]
         )
 
-        self.outputBias = tf.convert_to_tensor(
+        self.output_bias = tf.convert_to_tensor(
             self.weights[1],
             dtype=tf.float32
         )
 
         lstmKernelXH = tf.reshape(
             tf.convert_to_tensor(self.weights[2]),
-            [self.weightDims[2][0], self.weightDims[2][1]]
+            [self.weight_dims[2][0], self.weight_dims[2][1]]
         )
 
         lstmKernelHH = tf.reshape(
             tf.convert_to_tensor(self.weights[3]),
-            [self.weightDims[3][0], self.weightDims[3][1]]
+            [self.weight_dims[3][0], self.weight_dims[3][1]]
         )
         axis = 0
-        self.lstmKernel = tf.concat(
+        self.lstm_kernel = tf.concat(
             [lstmKernelXH, lstmKernelHH],
             axis=axis
         )
 
-        self.lstmBias = tf.convert_to_tensor(
+        self.lstm_bias = tf.convert_to_tensor(
             self.weights[4],
             dtype=tf.float32
         )
 
-        self.rawVars = [
-            self.outputKernel,
-            self.outputBias,
-            self.lstmKernel,
-            self.lstmBias
+        self.raw_vars = [
+            self.output_kernel,
+            self.output_bias,
+            self.lstm_kernel,
+            self.lstm_bias
         ]
-        print("hello")
 
-sketchy = SketchRNN("url")
-info : SketchRNNInfo = {
-    "max_seq_len":130,
-    "mode":2,
-    "name":"cat",
-    "scale_factor":82.2,
-    "version":6,
-}
+    def initialize(self):
+        self.dispose()
 
-weights = [[512,123],[123],[5,2048],[512,2048],[2048]]
-with open("weight.txt", "r") as f:
-    weightString = f.read().strip()
+        with open("cat.txt", "r") as f:
+            vars = json.load(f)
 
-sketchy.instantiateFromJSON(info, weights, [weightString])
+        self.instantiate_from_json(
+            vars[0],
+            vars[1],
+            vars[2]
+        )
 
-
-
-
-
+        self.initialized = True
     
     #* Samples the next point of the sketch given pdf parameters
     #*
@@ -460,3 +456,7 @@ sketchy.instantiateFromJSON(info, weights, [weightString])
             "c": new_c.numpy()[0],
             "h": new_h.numpy()[0],
         }
+
+sketchy = SketchRNN("url")
+sketchy.initialize()
+print("hello")
