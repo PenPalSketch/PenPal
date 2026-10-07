@@ -1,37 +1,6 @@
-#*
-#* Core implementation for RNN-based Magenta sketch models such as SketchRNN.
-#*
-#* @license
-#* Copyright 2018 Google Inc. All Rights Reserved.
-#* Licensed under the Apache License, Version 2.0 (the "License");
-#* you may not use self file except in compliance with the License.
-#* You may obtain a copy of the License at
-#*
-#* http://www.apache.org/licenses/LICENSE-2.0
-#*
-#* Unless required by applicable law or agreed to in writing, software
-#* distributed under the License is distributed on an "AS IS" BASIS,
-#* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#* See the License for the specific language governing permissions and
-#* limitations under the License.
-
-
-#*
 #* Imports
 import sketch_support as support
 import tensorflow as tf
-
-#* Interface for JSON specification of a `MusicVAE` model.
-#*
-#* @property max_seq_len: Model trained on dataset w/ self max sequence length.
-#* @property mode: Pre-trained models have self parameter for legacy reasons.
-#* 0 for VAE, 1 for Decoder only. self model is Decoder only (not used).
-#* @property name: QuickDraw name, like cat, dog, elephant, etc
-#* @property scale_factor: the factor to convert from neural-network space to
-#* pixel space. Most pre-trained models have self number between 80-120
-#* @property version: Pre-trained models have a version between 1-6, for
-#* the purpose of experimental research log.
-
 from typing import TypedDict, Optional
 import numpy as np
 import math
