@@ -1,5 +1,6 @@
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
+from UI.interactive_predict import AVAILABLE_MODELS, initRNNStateFromStrokes
 
 CANVAS_WIDTH = 700
 CANVAS_HEIGHT = 400
@@ -116,15 +117,10 @@ def on_new_line(raw_lines):
     # stroke = model.lineToStroke(raw_line_simplified, prev_line_end_point)
 
     # strokes = ss.strokes.concat(stroke)
-    # initRNNStateFromStrakes(strokes)
+    strokes = ss.strokes
 
+    initRNNStateFromStrokes(strokes)
 
-def initRNNStateFromStrokes(strokes):
-    # Initialize the RNN with these strokes.
-    encodeStrokes(strokes);
-    # Draw them.
-    p.background(255, 255, 255, 255);
-    drawStrokes(strokes, startX, startY);
 
 
 def draw_line(x1, y1, x2, y2, color="#000000", width=2):

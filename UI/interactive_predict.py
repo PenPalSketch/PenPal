@@ -52,7 +52,9 @@ def load_model():
 
 # Feeds user's strokes through the RNN so it remembers the drawing
 # Return model state or None if there aren't enough strokes yet 
-def encode_strokes(model, strokes):
+def encode_strokes(strokes):
+    model = ss.model
+
     if len(strokes) <= 5:
         return None
 
@@ -63,8 +65,9 @@ def encode_strokes(model, strokes):
 
 
 def initRNNStateFromStrokes(strokes):
-    # Initialize the RNN with these strokes.
-    encode_strokes(strokes);
+    print("init rnn")
+    # encodes given strokes into the model
+    # encode_strokes(strokes)
 
     # JS redraws user strokes for some reason, i'll comment it out for now
     # Draw them.
