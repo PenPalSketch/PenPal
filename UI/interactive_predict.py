@@ -3,14 +3,11 @@ import random
 # Pen index constants
 PEN_DOWN, PEN_UP, PEN_END = 0, 1, 2
 
-<<<<<<< HEAD
 ss = st.session_state
 
 AVAILABLE_MODELS = ['bird', 'ant','ambulance','angel','alarm_clock','antyoga','backpack','barn','basket','bear','bee','beeflower','bicycle','book','brain','bridge','bulldozer','bus','butterfly','cactus','calendar','castle','cat','catbus','catpig','chair','couch','crab','crabchair','crabrabbitfacepig','cruise_ship','diving_board','dog','dogbunny','dolphin','duck','elephant','elephantpig','everything','eye','face','fan','fire_hydrant','firetruck','flamingo','flower','floweryoga','frog','frogsofa','garden','hand','hedgeberry','hedgehog','helicopter','kangaroo','key','lantern','lighthouse','lion','lionsheep','lobster','map','mermaid','monapassport','monkey','mosquito','octopus','owl','paintbrush','palm_tree','parrot','passport','peas','penguin','pig','pigsheep','pineapple','pool','postcard','power_outlet','rabbit','rabbitturtle','radio','radioface','rain','rhinoceros','rifle','roller_coaster','sandwich','scorpion','sea_turtle','sheep','skull','snail','snowflake','speedboat','spider','squirrel','steak','stove','strawberry','swan','swing_set','the_mona_lisa','tiger','toothbrush','toothpaste','tractor','trombone','truck','whale','windmill','yoga','yogabicycle']
 BASE_URL = "https://storage.googleapis.com/quickdraw-models/sketchRNN/models/"
 
-=======
->>>>>>> origin/9-integrating-with-streamlit-ui
 ## PLACEHOLDER MODEL CLASS (to be replaced by ML/model.py's SketchRNN - same method names)
 class ShadowModel:
     def __init__(self, url): self.url = url
@@ -63,6 +60,16 @@ def encode_strokes(model, strokes):
     new_state = model.update(model.zeroInput(), new_state)
     new_state = model.updateStrokes(strokes, new_state, len(strokes) - 1)
     return model.copyState(new_state)
+
+
+def initRNNStateFromStrokes(strokes):
+    # Initialize the RNN with these strokes.
+    encode_strokes(strokes);
+
+    # JS redraws user strokes for some reason, i'll comment it out for now
+    # Draw them.
+    # draw_strokes(strokes, startX, startY);
+
 
 
 # p.draw in JS
