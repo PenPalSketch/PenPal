@@ -4,7 +4,7 @@
 #* @license
 #* Copyright 2018 Google Inc. All Rights Reserved.
 #* Licensed under the Apache License, Version 2.0 (the "License");
-#* you may not use this file except in compliance with the License.
+#* you may not use self file except in compliance with the License.
 #* You may obtain a copy of the License at
 #*
 #* http://www.apache.org/licenses/LICENSE-2.0
@@ -18,23 +18,24 @@
 
 #*
 #* Imports
-
+import sketch_support as support
 import tensorflow as tf
 
 #* Interface for JSON specification of a `MusicVAE` model.
 #*
-#* @property max_seq_len: Model trained on dataset w/ this max sequence length.
-#* @property mode: Pre-trained models have this parameter for legacy reasons.
-#* 0 for VAE, 1 for Decoder only. This model is Decoder only (not used).
+#* @property max_seq_len: Model trained on dataset w/ self max sequence length.
+#* @property mode: Pre-trained models have self parameter for legacy reasons.
+#* 0 for VAE, 1 for Decoder only. self model is Decoder only (not used).
 #* @property name: QuickDraw name, like cat, dog, elephant, etc
 #* @property scale_factor: the factor to convert from neural-network space to
-#* pixel space. Most pre-trained models have this number between 80-120
+#* pixel space. Most pre-trained models have self number between 80-120
 #* @property version: Pre-trained models have a version between 1-6, for
 #* the purpose of experimental research log.
 
 from typing import TypedDict, Optional
 import numpy as np
 import math
+import json
 
 import sketch_support as support
 
@@ -115,12 +116,98 @@ class SketchRNN:
     #* `SketchRNN` constructor.
     #*
     #* @param checkpointURL Path to the checkpoint directory.
+    def __init__(self, checkpoint_url: str):
+        self.checkpoint_url = checkpoint_url
+        self.initialized = False
 
 
+    def setPixelFactor(self, scale: int):
+        # for best effect, set to 1.0 for d3 or paper.js, 2.0 for p5.js
+        self.pixelFactor = scale
+        self.scaleFactor = self.info["scale_factor"] / self.pixelFactor
 
+    def dispose(self):
+        self.raw_vars = None
+        self.forget_bias = None
 
+        self.output_kernel = None
+        self.output_bias = None
+        self.lstm_kernel = None
+        self.lstm_bias = None
 
+        self.initialized = False
 
+    """
+    examples:
+    SketchRNNInfo: {"mode":2,"version":6,"max_seq_len":130,"name":"cat","scale_factor":82.2}
+    weight_dims: [[512,123],[123],[5,2048],[512,2048],[2048]
+    weightStrings: "wRCC6sALHvGcC27lXeCdCaz27QCTEOrwuvttDIr3y/fvBZ....
+    """
+    def instantiate_from_json(self, info: SketchRNNInfo, weight_dims: list[list[int]], weightStrings: list[str]):
+        self.forget_bias = tf.convert_to_tensor(1.0, dtype=tf.float32)
+        self.info = info
+        self.setPixelFactor(2.0)
+        self.weight_dims = weight_dims
+        self.numUnits = self.weight_dims[0][0]; # size of LSTM
+        
+        MAXWEIGHT = 10.0
+        self.weights = []
+        for weightString in weightStrings:
+            rawWeights =  np.array(support.string_to_array(weightString))
+            N = len(rawWeights)
+            rawWeights = MAXWEIGHT* rawWeights / 32767
+            self.weights.append(rawWeights)
+        
+        self.output_kernel = tf.reshape(
+            tf.convert_to_tensor(self.weights[0]),
+            [self.weight_dims[0][0], self.weight_dims[0][1]]
+        )
+
+        self.output_bias = tf.convert_to_tensor(
+            self.weights[1],
+            dtype=tf.float32
+        )
+
+        lstmKernelXH = tf.reshape(
+            tf.convert_to_tensor(self.weights[2]),
+            [self.weight_dims[2][0], self.weight_dims[2][1]]
+        )
+
+        lstmKernelHH = tf.reshape(
+            tf.convert_to_tensor(self.weights[3]),
+            [self.weight_dims[3][0], self.weight_dims[3][1]]
+        )
+        axis = 0
+        self.lstm_kernel = tf.concat(
+            [lstmKernelXH, lstmKernelHH],
+            axis=axis
+        )
+
+        self.lstm_bias = tf.convert_to_tensor(
+            self.weights[4],
+            dtype=tf.float32
+        )
+
+        self.raw_vars = [
+            self.output_kernel,
+            self.output_bias,
+            self.lstm_kernel,
+            self.lstm_bias
+        ]
+
+    def initialize(self):
+        self.dispose()
+
+        with open("cat.txt", "r") as f:
+            vars = json.load(f)
+
+        self.instantiate_from_json(
+            vars[0],
+            vars[1],
+            vars[2]
+        )
+
+        self.initialized = True
     
     #* Samples the next point of the sketch given pdf parameters
     #*
@@ -369,3 +456,7 @@ class SketchRNN:
             "c": new_c.numpy()[0],
             "h": new_h.numpy()[0],
         }
+
+sketchy = SketchRNN("url")
+sketchy.initialize()
+print("hello")
