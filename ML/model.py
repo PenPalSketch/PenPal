@@ -89,7 +89,7 @@ class SketchRNN:
         self.checkpoint_url = checkpoint_url
         self.initialized = False
 
-    def is_initialized() {
+    def is_initialized(self) {
         return self.initialized;
     }
     
