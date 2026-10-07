@@ -22,6 +22,15 @@ ss.setdefault("strokes", [])                       # contains all the strokes [d
 ss.setdefault("object_count", 0)                   # canvas objs already converted to strokes
 ss.setdefault("model_state", None)
 
+
+ss.setdefault("dx", 0)
+ss.setdefault("dy", 0)
+ss.setdefault("model_state", None)
+ss.setdefault("pen_state", [1, 0, 0]) # pen state [pen_down, pen_up, end]
+ss.setdefault("prev_pen_state", [1, 0, 0]) # previous pen state [pen_down, pen_up, end]
+
+ss.setdefault("generated_lines", [])
+
 # Update Functions
 def restart():
     ss.canvas_key += 1 # new key results in a new empty canvas
@@ -48,6 +57,7 @@ with col2:
         key="temperature")
 
 canvas_result = st_canvas(
+    initial_drawing={"version": "4.4.0", "objects": ss.generated_lines},
     drawing_mode="freedraw",
     fill_color="rgba(255, 165, 0, 0.3)",  
     stroke_width=2,
@@ -117,6 +127,36 @@ def on_new_line(raw_lines):
     # strokes = ss.strokes.concat(stroke)
     # initRNNStateFromStrakes(strokes)
 
+
+def initRNNStateFromStrokes(strokes):
+    # Initialize the RNN with these strokes.
+    encodeStrokes(strokes);
+    # Draw them.
+    p.background(255, 255, 255, 255);
+    drawStrokes(strokes, startX, startY);
+
+
+def draw_line(x1, y1, x2, y2, color="#000000", width=2):
+    print('drawing line')
+    left, top = min(x1, x2), min(y1, y2)
+    w, h = abs(x2 - x1), abs(y2 - y1)
+
+    cx, cy = left + w / 2, top + h / 2
+
+    # add object count so that this line isn't treated as a line
+    # a user drew, so it wouldnt get converted to a stroke
+    ss.object_count += 1
+    ss.generated_lines.append({
+        "type": "line",
+        "originX": "left", "originY": "top",
+        "left": left, "top": top,
+        "width": w, "height": h,
+        "x1": x1 - cx, "y1": y1 - cy,
+        "x2": x2 - cx, "y2": y2 - cy,
+        "stroke": color,
+        "strokeWidth": width,
+        "strokeLineCap": "round",
+    })
 
 
 # this is called whenever a new stroke was drawn
