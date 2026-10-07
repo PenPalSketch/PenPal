@@ -32,9 +32,11 @@ import tensorflow as tf
 #* @property version: Pre-trained models have a version between 1-6, for
 #* the purpose of experimental research log.
 
-from typing import TypedDict
+from typing import TypedDict, Optional
 import numpy as np
 import math
+
+import sketch_support as support
 
 class SketchRNNInfo(TypedDict):
     max_seq_len: int
@@ -114,10 +116,84 @@ class SketchRNN:
     #*
     #* @param checkpointURL Path to the checkpoint directory.
 
-    def __init__(self, checkpoint_url: str):
-        self.checkpoint_url = checkpoint_url
-        self.initialized = False
 
+
+
+
+
+    
+    #* Samples the next point of the sketch given pdf parameters
+    #*
+    #* @param pdf result from get_pdf() call (a StrokePDF)
+    #*
+    #* @returns [dx, dy, penDown, penUp, penEnd]
+ 
+    def sample(self, pdf: StrokePDF) -> list[float]:
+        # pdf is a StrokePDF
+        # returns [dx, dy, penDown, penUp, penEnd]
+        idx = support.sample_softmax(pdf["pi"])
+        mu1 = pdf["muX"][idx]
+        mu2 = pdf["muY"][idx]
+        sigma1 = pdf["sigmaX"][idx]
+        sigma2 = pdf["sigmaY"][idx]
+        corr = pdf["corr"][idx]
+        pen_idx = support.sample_softmax(pdf["pen"])
+        penstate = [0, 0, 0]
+        if pen_idx >= 0:  # sample_softmax returns -1 if sampling failed
+            penstate[pen_idx] = 1
+        delta = support.birandn(mu1, mu2, sigma1, sigma2, corr)
+        stroke = [
+            delta[0] * self.scaleFactor,
+            delta[1] * self.scaleFactor,
+            penstate[0],
+            penstate[1],
+            penstate[2]
+        ]
+        return stroke
+ 
+    #* Simplifies line using RDP algorithm
+    #*
+    #* @param line list of points [[x0, y0], [x1, y1], ...]
+    #* @param tolerance (Optional) default 2.0
+    #*
+    #* @returns simplified line [[x0', y0'], [x1', y1'], ...]
+ 
+    def simplify_line(self, line: list[list[float]],
+                      tolerance: Optional[float] = None) -> list[list[float]]:
+        if tolerance is None:
+            tolerance = 2.0
+        return support.simplify_line(line, tolerance)
+ 
+    #* Simplifies lines using RDP algorithm
+    #*
+    #* @param lines list of lines (each element is [[x0, y0], [x1, y1], ...])
+    #* @param tolerance (Optional) default 2.0
+    #*
+    #* @returns simplified lines (each elem is [[x0', y0'], [x1', y1'], ...])
+ 
+    def simplify_lines(self, lines: list[list[list[float]]],
+                       tolerance: Optional[float] = None) -> list[list[list[float]]]:
+        return support.simplify_lines(lines, tolerance)
+ 
+    #* Convert from polylines to stroke-5 format that sketch-rnn uses
+    #*
+    #* @param lines list of lines, each elem is ([[x0, y0], [x1, y1], ...])
+    #*
+    #* @returns stroke-5 format of the lines, list of [dx, dy, p0, p1, p2]
+ 
+    def lines_to_stroke(self, lines: list[list[list[float]]]) -> list[list[float]]:
+        return support.lines_to_strokes(lines)
+ 
+    #* Convert from a line format to stroke-5
+    #*
+    #* @param line list of points [[x0, y0], [x1, y1], ...]
+    #* @param last_point the absolute position of the last point
+    #*
+    #* @returns stroke-5 format of the line, list of [dx, dy, p0, p1, p2]
+ 
+    def line_to_stroke(self, line: list[list[float]],
+                       last_point: list[float]) -> list[list[float]]:
+        return support.line_to_stroke(line, last_point)
     #* Given the RNN state, returns the probability distribution function (pdf)
     #* of the next stroke. Optionally adjust the temperature of the pdf here.
     #*
