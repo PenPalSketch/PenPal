@@ -1,5 +1,6 @@
 import streamlit as st
 import random
+import math
 # Pen index constants
 PEN_DOWN, PEN_UP, PEN_END = 0, 1, 2
 
@@ -10,7 +11,9 @@ BASE_URL = "https://storage.googleapis.com/quickdraw-models/sketchRNN/models/"
 
 ## PLACEHOLDER MODEL CLASS (to be replaced by ML/model.py's SketchRNN - same method names)
 class ShadowModel:
-    def __init__(self, url): self.url = url
+    def __init__(self, url):
+        self.url = url
+        self._sample_count = 0
     def initialize(self): pass
     def setPixelFactor(self, f): pass
     def zeroState(self): return {"c": [0], "h": [0]}
@@ -21,10 +24,18 @@ class ShadowModel:
     def zeroInput(self): return [0, 0, 1, 0, 0]
 
     def sample(self, pdf):
-        """Fake: a random small move"""
-        if random.random() < 0.05:
-            return [0, 0, 0, 0, 1]
-        return [random.uniform(-10, 10), random.uniform(-10, 10), 0, 0, 1]
+        N = 50
+        R = 50
+        self._sample_count += 1
+        if self._sample_count >= N:
+            self._sample_count = 0
+            return [0, 0, 0, 0, 1]  # pen_end
+        i = self._sample_count
+        angle_curr = 2 * math.pi * i / N
+        angle_prev = 2 * math.pi * (i - 1) / N
+        dx = R * (math.cos(angle_curr) - math.cos(angle_prev))
+        dy = R * (math.sin(angle_curr) - math.sin(angle_prev))
+        return [dx, dy, 1, 0, 0]  # pen_down
 
     def simplify_line(self, line, tolerance=2.0):
         return line
@@ -67,14 +78,8 @@ def encode_strokes(strokes):
 def initRNNStateFromStrokes(strokes):
     print("Initializing RNN state")
     print("Strokes length: ", len(strokes))
-    # encodes given strokes into the model
     encode_strokes(strokes)
-
-    # Draw the strokes SketchRNN outputs until pen_end = 1
-    # In JS, p.draw is what draws the strokes
-    # however p.draw is called by p.js, the library that handles animation
-    # we don't need to worry about that,
-    # so draw will recursivelly call itself until pen_end = 1
+    ss.model_drawing = True
     draw()
 
     # JS redraws user strokes for some reason, i'll comment it out for now
@@ -103,11 +108,7 @@ def draw_line(x1, y1, x2, y2, color="#000000", width=2):
         "strokeWidth": width,
         "strokeLineCap": "round",
     })
-
-    st.rerun()
-
-
-
+    ss.object_count += 1
 
 # p.draw in JS
 def draw():
@@ -126,6 +127,7 @@ def draw():
     # if pen_end = 1, end
     if pen_state[PEN_END] == 1:
         print("Model stopped drawing!")
+        ss.model_drawing = False
         return
 
     # if previous drawing is finished, start a new one
@@ -134,11 +136,13 @@ def draw():
         pass
     else:
         if prev_pen[PEN_DOWN] == 1:
-            draw_line(ss.x, ss.y, dx, dy)
+            draw_line(ss.x, ss.y, ss.x + dx, ss.y + dy)
             pass
         # update
         ss.x += dx
         ss.y += dy
         ss.prev_pen_state = pen_state
 
-    draw()
+        st.rerun()
+
+
