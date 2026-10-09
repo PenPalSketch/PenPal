@@ -133,8 +133,7 @@ def draw():
         pass
     else:
         if prev_pen[PEN_DOWN] == 1:
-            # draw line
-            # p.line
+            draw_line(ss.x, ss.y, dx, dy)
             pass
         # update
         ss.x += dx
