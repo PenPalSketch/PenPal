@@ -83,6 +83,31 @@ def initRNNStateFromStrokes(strokes):
 
 
 
+def draw_line(x1, y1, x2, y2, color="#000000", width=2):
+    print('drawing line')
+    left, top = min(x1, x2), min(y1, y2)
+    w, h = abs(x2 - x1), abs(y2 - y1)
+
+    cx, cy = left + w / 2, top + h / 2
+
+    # add object count so that this line isn't treated as a line
+    # a user drew, so it wouldnt get converted to a stroke
+    ss.object_count += 1
+    ss.generated_lines.append({
+        "type": "line",
+        "originX": "left", "originY": "top",
+        "left": left, "top": top,
+        "width": w, "height": h,
+        "x1": x1 - cx, "y1": y1 - cy,
+        "x2": x2 - cx, "y2": y2 - cy,
+        "stroke": color,
+        "strokeWidth": width,
+        "strokeLineCap": "round",
+    })
+
+
+
+
 # p.draw in JS
 def draw():
     print("Model is drawing a stroke")
