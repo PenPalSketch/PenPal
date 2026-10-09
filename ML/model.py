@@ -4,6 +4,7 @@ try:
 except ImportError:
     import sketch_support as support
 
+from numpy._core.numeric import dtype
 import tensorflow as tf
 from typing import TypedDict, Optional
 from pathlib import Path
@@ -133,7 +134,7 @@ class SketchRNN:
             self.weights.append(rawWeights)
         
         self.output_kernel = tf.reshape(
-            tf.convert_to_tensor(self.weights[0]),
+            tf.convert_to_tensor(self.weights[0], dtype=float),
             [self.weight_dims[0][0], self.weight_dims[0][1]]
         )
 
@@ -143,18 +144,18 @@ class SketchRNN:
         )
 
         lstmKernelXH = tf.reshape(
-            tf.convert_to_tensor(self.weights[2]),
+            tf.convert_to_tensor(self.weights[2], dtype=tf.float32),
             [self.weight_dims[2][0], self.weight_dims[2][1]]
         )
 
         lstmKernelHH = tf.reshape(
-            tf.convert_to_tensor(self.weights[3]),
+            tf.convert_to_tensor(self.weights[3], dtype=tf.float32),
             [self.weight_dims[3][0], self.weight_dims[3][1]]
         )
         axis = 0
         self.lstm_kernel = tf.concat(
             [lstmKernelXH, lstmKernelHH],
-            axis=axis
+            axis=axis,
         )
 
         self.lstm_bias = tf.convert_to_tensor(
@@ -329,6 +330,7 @@ class SketchRNN:
     # * Match the legacy TensorFlow.js basicLSTMCell
     def basic_lstm_cell(self, forget_bias, lstm_kernel, lstm_bias, x, c, h):
         combined = tf.concat([x, h], axis=1)  
+
         gates = tf.matmul(combined, lstm_kernel) + lstm_bias 
         i, j, f, o = tf.split(gates, 4, axis=1)
 
