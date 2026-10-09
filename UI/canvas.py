@@ -80,6 +80,7 @@ canvas_result = st_canvas(
 # load model once when streamlit program starts:
 if "model" not in ss:
     ss.model = load_model()
+    ss.model_state = ss.model.zeroState()
 
 
 # equivalent to mouseDragged
