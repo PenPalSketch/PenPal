@@ -1,6 +1,14 @@
-import streamlit as st
+import sys
+from pathlib import Path
 import random
 import math
+
+import streamlit as st
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 # Pen index constants
 PEN_DOWN, PEN_UP, PEN_END = 0, 1, 2
 
@@ -9,49 +17,7 @@ ss = st.session_state
 AVAILABLE_MODELS = ['bird', 'ant','ambulance','angel','alarm_clock','antyoga','backpack','barn','basket','bear','bee','beeflower','bicycle','book','brain','bridge','bulldozer','bus','butterfly','cactus','calendar','castle','cat','catbus','catpig','chair','couch','crab','crabchair','crabrabbitfacepig','cruise_ship','diving_board','dog','dogbunny','dolphin','duck','elephant','elephantpig','everything','eye','face','fan','fire_hydrant','firetruck','flamingo','flower','floweryoga','frog','frogsofa','garden','hand','hedgeberry','hedgehog','helicopter','kangaroo','key','lantern','lighthouse','lion','lionsheep','lobster','map','mermaid','monapassport','monkey','mosquito','octopus','owl','paintbrush','palm_tree','parrot','passport','peas','penguin','pig','pigsheep','pineapple','pool','postcard','power_outlet','rabbit','rabbitturtle','radio','radioface','rain','rhinoceros','rifle','roller_coaster','sandwich','scorpion','sea_turtle','sheep','skull','snail','snowflake','speedboat','spider','squirrel','steak','stove','strawberry','swan','swing_set','the_mona_lisa','tiger','toothbrush','toothpaste','tractor','trombone','truck','whale','windmill','yoga','yogabicycle']
 BASE_URL = "https://storage.googleapis.com/quickdraw-models/sketchRNN/models/"
 
-## PLACEHOLDER MODEL CLASS (to be replaced by ML/model.py's SketchRNN - same method names)
-class ShadowModel:
-    def __init__(self, url):
-        self.url = url
-        self._sample_count = 0
-    def initialize(self): pass
-    def setPixelFactor(self, f): pass
-    def zeroState(self): return {"c": [0], "h": [0]}
-    def copyState(self, s): return dict(s)
-    def update(self, stroke, state): return state
-    def updateStrokes(self, strokes, state, steps): return state
-    def getPDF(self, state, temperature): return {}
-    def zeroInput(self): return [0, 0, 1, 0, 0]
-
-    def sample(self, pdf):
-        N = 50
-        R = 50
-        self._sample_count += 1
-        if self._sample_count >= N:
-            self._sample_count = 0
-            return [0, 0, 0, 0, 1]  # pen_end
-        i = self._sample_count
-        angle_curr = 2 * math.pi * i / N
-        angle_prev = 2 * math.pi * (i - 1) / N
-        dx = R * (math.cos(angle_curr) - math.cos(angle_prev))
-        dy = R * (math.sin(angle_curr) - math.sin(angle_prev))
-        return [dx, dy, 1, 0, 0]  # pen_down
-
-    def simplify_line(self, line, tolerance=2.0):
-        return line
-
-    def line_to_stroke(self, line, last_point):
-        """ Absolute points -> [dx, dy, p_down, p_up, p_end] offsets.
-        Pen is down for every point except the last, where it lifts."""
-        strokes = []
-        px, py = last_point
-        for j, (x, y) in enumerate(line):
-            last = j == len(line) - 1
-            strokes.append([x - px, y - py, 0 if last else 1, 1 if last else 0, 0])
-            px, py = x, y
-        return strokes
-
-SketchRNN = ShadowModel   # later: from ML.model import SketchRNN
+from ML.model import SketchRNN
 
 # same as js's initModel()
 def load_model():

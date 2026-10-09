@@ -1,12 +1,15 @@
 #* Imports
-import sketch_support as support
+try:
+    from . import sketch_support as support
+except ImportError:
+    import sketch_support as support
+
 import tensorflow as tf
 from typing import TypedDict, Optional
+from pathlib import Path
 import numpy as np
 import math
 import json
-
-import sketch_support as support
 
 class SketchRNNInfo(TypedDict):
     max_seq_len: int
@@ -169,7 +172,8 @@ class SketchRNN:
     def initialize(self):
         self.dispose()
 
-        with open("cat.txt", "r") as f:
+        model_dir = Path(__file__).resolve().parent
+        with open(model_dir / "cat.txt", "r") as f:
             vars = json.load(f)
 
         self.instantiate_from_json(
@@ -428,6 +432,6 @@ class SketchRNN:
             "h": new_h.numpy()[0],
         }
 
-sketchy = SketchRNN("url")
+sketchy = SketchRNN("cat")
 sketchy.initialize()
 print("hello")

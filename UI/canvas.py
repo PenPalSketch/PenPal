@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+import random
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 from interactive_predict import AVAILABLE_MODELS, draw_line, draw, initRNNStateFromStrokes, load_model
@@ -148,9 +156,3 @@ if canvas_result.json_data is not None:
         on_new_line(objects)
     elif ss.model_drawing:
         draw()
-
-
-
-
-
-
