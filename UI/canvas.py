@@ -13,6 +13,8 @@ ss.setdefault("all_raw_lines", [])                 # contains lines in form of l
 ss.setdefault("strokes", [])                       # contains all the strokes [dx, dy, p1, p2, p3]]
 ss.setdefault("object_count", 0)                   # canvas objs already converted to strokes
 
+ss.setdefault("x", 0)
+ss.setdefault("y", 0)
 ss.setdefault("dx", 0)
 ss.setdefault("dy", 0)
 ss.setdefault("model_state", None)
@@ -65,7 +67,6 @@ canvas_result = st_canvas(
 
 # load model once when streamlit program starts:
 if "model" not in ss:
-    print("hello???")
     ss.model = load_model()
 
 
@@ -94,6 +95,8 @@ def on_new_line(raw_lines):
     if not len(raw_lines) > 0: # nothing drawn
         return
 
+    model = ss.model
+
     raw_line_svg = raw_lines[-1] # newest stroke
 
     # path of the entire line user drew
@@ -105,9 +108,7 @@ def on_new_line(raw_lines):
 
     ss.all_raw_lines.append(raw_line)
 
-
-    raw_line_simplified = []
-    # raw_line_simplified = model.simplifyLine(raw_line_points)
+    raw_line_simplified = model.simplify_line(raw_line)
 
     # the end point of previous line is needed
     # see p.mouseReleased in JS
@@ -120,10 +121,8 @@ def on_new_line(raw_lines):
     if len(ss.all_raw_lines) > 1:
         prev_line_end_point = ss.all_raw_lines[-2][-1]
 
-    # stroke = model.lineToStroke(raw_line_simplified, prev_line_end_point)
-
-    # strokes = ss.strokes.concat(stroke)
-    strokes = ss.strokes
+    stroke = model.line_to_stroke(raw_line_simplified, prev_line_end_point)
+    strokes = ss.strokes + [stroke]
 
     initRNNStateFromStrokes(strokes)
 

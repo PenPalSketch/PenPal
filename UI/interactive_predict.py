@@ -24,7 +24,7 @@ class ShadowModel:
         """Fake: a random small move"""
         if random.random() < 0.05:
             return [0, 0, 0, 0, 1]
-        return [random.uniform(-10, 10), random.uniform(-10, 10), 1, 0, 0]
+        return [random.uniform(-10, 10), random.uniform(-10, 10), 0, 0, 1]
 
     def simplify_line(self, line, tolerance=2.0):
         return line
@@ -65,9 +65,17 @@ def encode_strokes(strokes):
 
 
 def initRNNStateFromStrokes(strokes):
-    print("init rnn")
+    print("Initializing RNN state")
+    print("Strokes length: ", len(strokes))
     # encodes given strokes into the model
-    # encode_strokes(strokes)
+    encode_strokes(strokes)
+
+    # Draw the strokes SketchRNN outputs until pen_end = 1
+    # In JS, p.draw is what draws the strokes
+    # however p.draw is called by p.js, the library that handles animation
+    # we don't need to worry about that,
+    # so draw will recursivelly call itself until pen_end = 1
+    draw()
 
     # JS redraws user strokes for some reason, i'll comment it out for now
     # Draw them.
@@ -76,7 +84,9 @@ def initRNNStateFromStrokes(strokes):
 
 
 # p.draw in JS
-def draw(model):
+def draw():
+    print("Model is drawing a stroke")
+    model = ss.model
     prev_pen = ss.prev_pen_state
     model_state = model.update([ss.dx, ss.dy] + prev_pen, ss.model_state)
     pdf = model.getPDF(model_state, ss.temperature)
@@ -86,6 +96,11 @@ def draw(model):
     dx = sample[0]
     dy = sample[1]
     pen_state = sample[2:]
+
+    # if pen_end = 1, end
+    if pen_state[PEN_END] == 1:
+        print("Model stopped drawing!")
+        return
 
     # if previous drawing is finished, start a new one
     if pen_state[PEN_END] == 1:
@@ -100,3 +115,5 @@ def draw(model):
         ss.x += dx
         ss.y += dy
         ss.prev_pen_state = pen_state
+
+    draw()
