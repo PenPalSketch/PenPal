@@ -32,6 +32,8 @@ def restart():
     ss.all_raw_lines = []
     ss.strokes = []
     ss.object_count = 0
+    ss.user_lines = []
+    ss.generated_lines = []
     ss.model_state = None
     print("helol")
 
@@ -94,7 +96,6 @@ def get_points(path):
 
 # equivalent to mouseReleased
 def on_new_line(raw_lines):
-    print("on new line")
     if not len(raw_lines) > 0: # nothing drawn
         return
 
