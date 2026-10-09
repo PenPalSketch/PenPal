@@ -92,7 +92,6 @@ def draw_line(x1, y1, x2, y2, color="#000000", width=2):
 
     # add object count so that this line isn't treated as a line
     # a user drew, so it wouldnt get converted to a stroke
-    ss.object_count += 1
     ss.generated_lines.append({
         "type": "line",
         "originX": "left", "originY": "top",
@@ -104,6 +103,8 @@ def draw_line(x1, y1, x2, y2, color="#000000", width=2):
         "strokeWidth": width,
         "strokeLineCap": "round",
     })
+
+    st.rerun()
 
 
 
