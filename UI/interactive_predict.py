@@ -79,15 +79,23 @@ def draw_line(x1, y1, x2, y2, color="#000000", width=2):
 # p.draw in JS
 def draw():
     print("Model is drawing a stroke")
+    ss.model_strokes_count += 1
+
+    if ss.model_strokes_count > 50:
+        return
+
     model = ss.model
     prev_pen = ss.prev_pen_state
     model_state = model.update([ss.dx, ss.dy] + prev_pen, ss.model_state)
     pdf = model.getPDF(model_state, ss.temperature)
 
+
     sample = model.sample(pdf)
 
-    dx = sample[0]
-    dy = sample[1]
+    print(sample)
+
+    dx = int(sample[0])
+    dy = int(sample[1])
     pen_state = sample[2:]
 
     # if pen_end = 1, end

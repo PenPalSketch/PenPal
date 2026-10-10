@@ -34,6 +34,8 @@ ss.setdefault("generated_lines", [])
 ss.setdefault("model_drawing", False)
 ss.setdefault("user_lines", [])
 
+ss.setdefault("model_strokes_count", 0)
+
 # Update Functions
 def restart():
     ss.canvas_key += 1 # new key results in a new empty canvas
