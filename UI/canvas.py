@@ -144,6 +144,9 @@ def on_new_line(raw_lines):
 
     initRNNStateFromStrokes(strokes)
 
+    # pen up after user stopped drawing
+    ss.prev_pen = [0, 1, 0]
+
 
 
 # this is called whenever a new stroke was drawn
