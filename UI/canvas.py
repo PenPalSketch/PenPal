@@ -110,10 +110,6 @@ def on_new_line(raw_lines):
     if not len(raw_lines) > 0: # nothing drawn
         return
 
-
-    ss.x = 100
-    ss.y = 100
-
     model = ss.model
 
     raw_line_svg = raw_lines[-1] # newest stroke
@@ -144,7 +140,7 @@ def on_new_line(raw_lines):
         prev_line_end_point = ss.all_raw_lines[-2][-1]
 
     stroke = model.line_to_stroke(raw_line_simplified, prev_line_end_point)
-    strokes = ss.strokes + [stroke]
+    strokes = ss.strokes + stroke
 
     initRNNStateFromStrokes(strokes)
 

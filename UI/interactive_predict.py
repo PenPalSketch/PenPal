@@ -30,15 +30,30 @@ def load_model():
 # Feeds user's strokes through the RNN so it remembers the drawing
 # Return model state or None if there aren't enough strokes yet 
 def encode_strokes(strokes):
+    print("encoding strokes")
     model = ss.model
 
     if len(strokes) <= 5:
         return None
 
+
     new_state = model.zeroState()
-    new_state = model.update(model.zeroInput(), new_state)
+    # new_state = model.update(model.zeroInput(), new_state)
+    new_state = model.update([0, 0, 1, 0, 0], new_state)
     new_state = model.updateStrokes(strokes, new_state, len(strokes) - 1)
-    return model.copyState(new_state)
+
+    ss.model_state = model.copyState(new_state)
+
+    # set x and y
+    last_point = ss.all_raw_lines[-1][-1]
+    last_last_point = ss.all_raw_lines[-1][-2]
+
+    ss.x = last_point[0]
+    ss.y = last_point[1]
+
+    ss.dx = last_last_point[0] - last_point[0]
+    ss.dy = last_last_point[1] - last_point[1]
+
 
 
 def initRNNStateFromStrokes(strokes):
@@ -81,17 +96,21 @@ def draw():
     print("Model is drawing a stroke")
     ss.model_strokes_count += 1
 
-    if ss.model_strokes_count > 50:
+    # limit how many strokes the model draws
+    # for now because it never stops
+    if ss.model_strokes_count > 500:
+        print("STROKE LIMIT")
         return
 
     model = ss.model
     prev_pen = ss.prev_pen_state
-    model_state = model.update([ss.dx, ss.dy] + prev_pen, ss.model_state)
-    pdf = model.getPDF(model_state, ss.temperature)
+    ss.model_state = model.update([ss.dx, ss.dy] + prev_pen, ss.model_state)
+    pdf = model.getPDF(ss.model_state, ss.temperature)
 
 
     sample = model.sample(pdf)
 
+    print("Sample:")
     print(sample)
 
     dx = int(sample[0])
@@ -115,6 +134,8 @@ def draw():
         # update
         ss.x += dx
         ss.y += dy
+        ss.dx = dx
+        ss.dy = dy
         ss.prev_pen_state = pen_state
 
         st.rerun()
