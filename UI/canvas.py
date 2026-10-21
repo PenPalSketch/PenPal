@@ -135,7 +135,7 @@ def on_new_line(raw_lines):
     #   the human ended this line here and then started a new line all the way here
     #   and that is somehow useful
 
-    prev_line_end_point = (0, 0);
+    prev_line_end_point = (0, 0)
     if len(ss.all_raw_lines) > 1:
         prev_line_end_point = ss.all_raw_lines[-2][-1]
 
@@ -158,3 +158,4 @@ if canvas_result.json_data is not None:
         on_new_line(objects)
     elif ss.model_drawing:
         draw()
+

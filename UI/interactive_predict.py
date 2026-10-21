@@ -2,8 +2,12 @@ import sys
 from pathlib import Path
 import random
 import math
+import json
+import numpy as np
 
 import streamlit as st
+
+firstTime = True
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -30,7 +34,7 @@ def load_model():
 # Feeds user's strokes through the RNN so it remembers the drawing
 # Return model state or None if there aren't enough strokes yet 
 def encode_strokes(strokes):
-    print("encoding strokes")
+    strokes = [[305.002, 96, 1, 0, 0], [-24.50200000000001, 10, 1, 0, 0], [-8.0, 8, 1, 0, 0], [-7.5, 15.5, 1, 0, 0], [-6, 38.5, 1, 0, 0], [2, 13, 1, 0, 0], [6.5, 12.5, 1, 0, 0], [32.5, 26.0, 1, 0, 0], [34.5, 10.5, 1, 0, 0], [24.5, -3, 1, 0, 0], [35.5, -16, 1, 0, 0], [10.5, -11.5, 1, 0, 0], [4, -16.5, 1, 0, 0], [-1.5, -22, 1, 0, 0], [-12.0, -30, 1, 0, 0], [-19.0, -15, 1, 0, 0], [-27.0, -15, 1, 0, 0], [-37.5, -10, 1, 0, 0], [-8, 2.0019999999999953, 0, 1, 0]]
     model = ss.model
 
     if len(strokes) <= 5:
@@ -40,6 +44,7 @@ def encode_strokes(strokes):
     new_state = model.zeroState()
     # new_state = model.update(model.zeroInput(), new_state)
     new_state = model.update([0, 0, 1, 0, 0], new_state)
+    # print("encode_strokes ", new_state)
     new_state = model.updateStrokes(strokes, new_state, len(strokes) - 1)
 
     ss.model_state = model.copyState(new_state)
@@ -91,8 +96,21 @@ def draw_line(x1, y1, x2, y2, color="#000000", width=2):
     })
     ss.object_count += 1
 
+def to_serializable(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: to_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [to_serializable(v) for v in obj]
+    if isinstance(obj, tuple):
+        return [to_serializable(v) for v in obj]
+    return obj
+
+
 # p.draw in JS
 def draw():
+    global firstTime  
     print("Model is drawing a stroke")
     ss.model_strokes_count += 1
 
@@ -105,13 +123,18 @@ def draw():
     model = ss.model
     prev_pen = ss.prev_pen_state
     ss.model_state = model.update([ss.dx, ss.dy] + prev_pen, ss.model_state)
+    # if (firstTime == True):
+    #     with open("test.txt", "w") as file:
+    #         file.write(json.dumps(to_serializable(ss.model_state)))
+    firstTime = False
     pdf = model.getPDF(ss.model_state, ss.temperature)
+    # print(pdf)
 
 
     sample = model.sample(pdf)
+    
 
-    print("Sample:")
-    print(sample)
+    # print(sample)
 
     dx = int(sample[0])
     dy = int(sample[1])

@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import math
 import json
+count = 0
 
 class SketchRNNInfo(TypedDict):
     max_seq_len: int
@@ -124,7 +125,9 @@ class SketchRNN:
         self.setPixelFactor(2.0)
         self.weight_dims = weight_dims
         self.numUnits = self.weight_dims[0][0]; # size of LSTM
-        
+       
+        # with open("test.txt", "w") as file:
+        #     file.write(str(weightStrings))
         MAXWEIGHT = 10.0
         self.weights = []
         for weightString in weightStrings:
@@ -132,7 +135,7 @@ class SketchRNN:
             N = len(rawWeights)
             rawWeights = MAXWEIGHT* rawWeights / 32767
             self.weights.append(rawWeights)
-        
+        # print("weights ", self.weights)
         self.output_kernel = tf.reshape(
             tf.convert_to_tensor(self.weights[0], dtype=float),
             [self.weight_dims[0][0], self.weight_dims[0][1]]
@@ -212,6 +215,16 @@ class SketchRNN:
             penstate[1],
             penstate[2]
         ]
+        print(stroke)
+
+        stroke = [
+            10,
+            10,
+            penstate[0],
+            penstate[1],
+            penstate[2]
+        ]
+        
         return stroke
  
     #* Simplifies line using RDP algorithm
@@ -347,11 +360,13 @@ class SketchRNN:
     # * @returns next LSTMState.
     
     def update(self, stroke, state):
-
-        print("\n\n==== UPDATE")
-        print(stroke)
-        print(state["h"][:10])
-        print("==== UPDATE\n\n")
+        global first
+        global count
+        # print("update: stoke ", stroke)
+        # print("\n\n==== UPDATE")
+        # print(stroke)
+        # print(state["h"][:10])
+        # print("==== UPDATE\n\n")
 
         numUnits = self.numUnits
         s = self.scaleFactor
@@ -363,11 +378,20 @@ class SketchRNN:
             stroke[3], 
             stroke[4]
         ]
+        #print("update: normStroke ", normStroke)
 
         x = tf.convert_to_tensor([normStroke], dtype=tf.float32) # current stroke tensor
         c = tf.convert_to_tensor([state["c"]], dtype=tf.float32) # cell memory context tensor
         h = tf.convert_to_tensor([state["h"]], dtype=tf.float32) # hidden state context tensor
 
+        # if (first):
+        #     print("x: ", x)
+        #     print("c: ", c)
+        #     print("h: ", h)
+        #     first = False
+        # print("forget_bias ", self.forget_bias)
+        # print("lstm_kernel: ", self.lstm_kernel)
+        # print(" self.lstm_bias ",  self.lstm_bias)
         # apply lstm cell math to update c and h for next iteration
         new_c, new_h = self.basic_lstm_cell(
             self.forget_bias,
@@ -378,11 +402,20 @@ class SketchRNN:
             h
         )
 
+        # if (first):
+        #     first = False
+        #     print("new_c: ", new_c)
+
+        if (count == 1):
+            print("new_c: ", new_c)
+        count+=1
+
         # return updated c and h
         return {
             "c": new_c.numpy()[0],
             "h": new_h.numpy()[0],
         }
+        
 
     #* Updates the RNN on a series of Strokes, returns the next state.
     #*
@@ -444,3 +477,4 @@ class SketchRNN:
 sketchy = SketchRNN("cat")
 sketchy.initialize()
 print("hello")
+
