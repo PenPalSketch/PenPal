@@ -48,7 +48,8 @@ def gauss_random() -> float:
 
 
 def randf(a: float, b: float) -> float:
-    return random.random() * (b - a) + a
+    # return random.random() * (b - a) + a
+	return -0.0012
 
 
 def randi(a: float, b: float) -> int:
@@ -61,8 +62,11 @@ def randn(mu: float, std: float) -> float:
 
 def birandn(mu1: float, mu2: float, std1: float, std2: float, rho: float) -> List[float]:
     """From http://www.math.grin.edu/~mooret/courses/math336/bivariate-normal.html"""
-    z1 = randn(0, 1)
-    z2 = randn(0, 1)
+    # z1 = randn(0, 1)
+    # z2 = randn(0, 1)
+    z1 = -0.99
+    z2 = -1.38
+    print("Zs: ", z1, z2)
     x = math.sqrt(1 - rho * rho) * std1 * z1 + rho * std1 * z2 + mu1
     y = std2 * z2 + mu2
     return [x, y]
@@ -71,6 +75,7 @@ def birandn(mu1: float, mu2: float, std1: float, std2: float, rho: float) -> Lis
 def sample_softmax(z_sample: Sequence[float]) -> int:
     """Sample from a categorical distribution."""
     x = randf(0, 1)
+    print("softmax x: ", x)
     accumulate = 0.0
     for i, p in enumerate(z_sample):
         accumulate += p

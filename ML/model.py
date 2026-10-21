@@ -215,15 +215,17 @@ class SketchRNN:
             penstate[1],
             penstate[2]
         ]
-        print(stroke)
 
-        stroke = [
-            10,
-            10,
-            penstate[0],
-            penstate[1],
-            penstate[2]
-        ]
+        # stroke = [
+        #     10,
+        #     10,
+            # penstate[0],
+            # penstate[1],
+            # penstate[2]
+        #     1, 0, 0
+        # ]
+
+        # print(stroke)
         
         return stroke
  
@@ -406,9 +408,9 @@ class SketchRNN:
         #     first = False
         #     print("new_c: ", new_c)
 
-        if (count == 1):
-            print("new_c: ", new_c)
-        count+=1
+        # if (count == 1):
+        #     print("new_c: ", new_c)
+        # count+=1
 
         # return updated c and h
         return {

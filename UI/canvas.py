@@ -151,7 +151,7 @@ def on_new_line(raw_lines):
 
 # this is called whenever a new stroke was drawn
 if canvas_result.json_data is not None:
-    print("new line")
+    # print("new line")
 
     objects = canvas_result.json_data.get("objects", [])
     if len(objects) > ss.object_count:                    # more strokes than previous drawing
