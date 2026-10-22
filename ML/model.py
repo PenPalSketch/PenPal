@@ -215,15 +215,6 @@ class SketchRNN:
             penstate[1],
             penstate[2]
         ]
-        print(stroke)
-
-        stroke = [
-            10,
-            10,
-            penstate[0],
-            penstate[1],
-            penstate[2]
-        ]
         
         return stroke
  

@@ -34,7 +34,6 @@ def load_model():
 # Feeds user's strokes through the RNN so it remembers the drawing
 # Return model state or None if there aren't enough strokes yet 
 def encode_strokes(strokes):
-    strokes = [[305.002, 96, 1, 0, 0], [-24.50200000000001, 10, 1, 0, 0], [-8.0, 8, 1, 0, 0], [-7.5, 15.5, 1, 0, 0], [-6, 38.5, 1, 0, 0], [2, 13, 1, 0, 0], [6.5, 12.5, 1, 0, 0], [32.5, 26.0, 1, 0, 0], [34.5, 10.5, 1, 0, 0], [24.5, -3, 1, 0, 0], [35.5, -16, 1, 0, 0], [10.5, -11.5, 1, 0, 0], [4, -16.5, 1, 0, 0], [-1.5, -22, 1, 0, 0], [-12.0, -30, 1, 0, 0], [-19.0, -15, 1, 0, 0], [-27.0, -15, 1, 0, 0], [-37.5, -10, 1, 0, 0], [-8, 2.0019999999999953, 0, 1, 0]]
     model = ss.model
 
     if len(strokes) <= 5:
@@ -56,9 +55,10 @@ def encode_strokes(strokes):
     ss.x = last_point[0]
     ss.y = last_point[1]
 
-    ss.dx = last_last_point[0] - last_point[0]
-    ss.dy = last_last_point[1] - last_point[1]
+    s = strokes[-1]
 
+    ss.dx = s[0]
+    ss.dy = s[1]
 
 
 def initRNNStateFromStrokes(strokes):

@@ -140,9 +140,9 @@ def on_new_line(raw_lines):
         prev_line_end_point = ss.all_raw_lines[-2][-1]
 
     stroke = model.line_to_stroke(raw_line_simplified, prev_line_end_point)
-    strokes = ss.strokes + stroke
+    ss.strokes = ss.strokes + stroke
 
-    initRNNStateFromStrokes(strokes)
+    initRNNStateFromStrokes(ss.strokes)
 
     # pen up after user stopped drawing
     ss.prev_pen = [0, 1, 0]
