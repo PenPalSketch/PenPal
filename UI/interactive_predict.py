@@ -51,6 +51,7 @@ def encode_strokes(strokes):
 
 
 def initRNNStateFromStrokes(strokes):
+    ss.model_state = ss.model.zeroState()
     ss.model_initialized = True
     encode_strokes(strokes)
     draw(one_line=True)
@@ -92,6 +93,9 @@ def draw(one_line=True):
     pdf = model.getPDF(ss.model_state, ss.temperature)
 
     sample = model.sample(pdf)
+
+
+    ss.strokes.append(sample)
 
     dx = int(sample[0])
     dy = int(sample[1])
