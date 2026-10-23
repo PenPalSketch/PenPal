@@ -303,6 +303,8 @@ class SketchRNN:
 
         return pdf
 
+    def zero_input(self):
+        return [0, 0, 1, 0, 0]
 
     #* Returns the zero/initial state of the model
     #*
