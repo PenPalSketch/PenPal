@@ -84,11 +84,6 @@ def draw_line(x1, y1, x2, y2, color="#000000", width=2):
 def draw():
     ss.model_strokes_count += 1
 
-    # limit how many strokes the model draws
-    # for now because it never stops
-    if ss.model_strokes_count > 500:
-        return
-
     model = ss.model
     prev_pen = ss.prev_pen_state
     ss.model_state = model.update([ss.dx, ss.dy] + prev_pen, ss.model_state)
