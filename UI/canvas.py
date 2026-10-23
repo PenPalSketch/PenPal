@@ -134,7 +134,7 @@ def on_new_line(raw_lines):
 
     ss.all_raw_lines.append(raw_line)
 
-    raw_line_simplified = model.simplify_line(raw_line, 2)
+    raw_line_simplified = model.simplify_line(raw_line, 1.5)
 
     # the end point of previous line is needed
     prev_line_end_point = (0, 0);

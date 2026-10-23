@@ -43,8 +43,10 @@ def encode_strokes(strokes):
     ss.x = last_point[0]
     ss.y = last_point[1]
 
-    ss.dx = last_last_point[0] - last_point[0]
-    ss.dy = last_last_point[1] - last_point[1]
+    s = strokes[-1]
+
+    ss.dx = s[0]
+    ss.dy = s[1]
 
 
 
