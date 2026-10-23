@@ -7,8 +7,6 @@ import numpy as np
 
 import streamlit as st
 
-firstTime = True
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -39,11 +37,8 @@ def encode_strokes(strokes):
     if len(strokes) <= 5:
         return None
 
-
     new_state = model.zeroState()
-    # new_state = model.update(model.zeroInput(), new_state)
     new_state = model.update([0, 0, 1, 0, 0], new_state)
-    # print("encode_strokes ", new_state)
     new_state = model.updateStrokes(strokes, new_state, len(strokes) - 1)
 
     ss.model_state = model.copyState(new_state)
@@ -75,7 +70,6 @@ def initRNNStateFromStrokes(strokes):
 
 
 def draw_line(x1, y1, x2, y2, color="#000000", width=2):
-    print('drawing line')
     left, top = min(x1, x2), min(y1, y2)
     w, h = abs(x2 - x1), abs(y2 - y1)
 
@@ -110,8 +104,6 @@ def to_serializable(obj):
 
 # p.draw in JS
 def draw():
-    global firstTime  
-    print("Model is drawing a stroke")
     ss.model_strokes_count += 1
 
     # limit how many strokes the model draws
@@ -123,18 +115,10 @@ def draw():
     model = ss.model
     prev_pen = ss.prev_pen_state
     ss.model_state = model.update([ss.dx, ss.dy] + prev_pen, ss.model_state)
-    # if (firstTime == True):
-    #     with open("test.txt", "w") as file:
-    #         file.write(json.dumps(to_serializable(ss.model_state)))
-    firstTime = False
-    pdf = model.getPDF(ss.model_state, ss.temperature)
-    # print(pdf)
 
+    pdf = model.getPDF(ss.model_state, ss.temperature)
 
     sample = model.sample(pdf)
-    
-
-    # print(sample)
 
     dx = int(sample[0])
     dy = int(sample[1])
