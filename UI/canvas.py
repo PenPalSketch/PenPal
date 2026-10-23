@@ -8,7 +8,7 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
-from interactive_predict import AVAILABLE_MODELS, draw_line, draw, initRNNStateFromStrokes, load_model
+from interactive_predict import draw_line, draw, initRNNStateFromStrokes, load_model
 
 CANVAS_WIDTH = 700
 CANVAS_HEIGHT = 400
