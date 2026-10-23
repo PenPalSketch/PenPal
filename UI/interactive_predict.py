@@ -49,8 +49,8 @@ def encode_strokes(strokes):
 
 
 def initRNNStateFromStrokes(strokes):
+    ss.keep_drawing = True
     encode_strokes(strokes)
-    ss.model_drawing = True
     draw()
 
     # JS redraws user strokes for some reason, i'll comment it out for now
@@ -98,7 +98,6 @@ def draw():
     # if drawing is finished
     if pen_state[PEN_END] == 1:
         # start a new drawing
-        # initRNNStateFromStrokes(ss.strokes)
         st.rerun() # updates the strokes on the canvas
     else:
         if prev_pen[PEN_DOWN] == 1:
