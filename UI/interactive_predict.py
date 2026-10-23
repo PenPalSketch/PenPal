@@ -100,26 +100,22 @@ def draw():
     dy = int(sample[1])
     pen_state = sample[2:]
 
-    # if pen_end = 1, end
+    # if drawing is finished
     if pen_state[PEN_END] == 1:
-        ss.model_drawing = False
-        return
-
-    # if previous drawing is finished, start a new one
-    if pen_state[PEN_END] == 1:
+        # start a new drawing
         # initRNNStateFromStrokes(ss.strokes)
-        pass
+        st.rerun() # updates the strokes on the canvas
     else:
         if prev_pen[PEN_DOWN] == 1:
             draw_line(ss.x, ss.y, ss.x + dx, ss.y + dy)
             pass
-        # update
+
+        # update cursor
         ss.x += dx
         ss.y += dy
         ss.dx = dx
         ss.dy = dy
         ss.prev_pen_state = pen_state
 
-        st.rerun()
-
+        draw()
 
