@@ -2,8 +2,8 @@ import sys
 from pathlib import Path
 import random
 import math
-
 import streamlit as st
+from ML.model import SketchRNN
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -14,20 +14,16 @@ PEN_DOWN, PEN_UP, PEN_END = 0, 1, 2
 
 ss = st.session_state
 
-from ML.model import SketchRNN
-
 # same as js's initModel()
 def load_model():
     model = SketchRNN("url")
     model.initialize()
-    print("SketchRNN model loaded")
     model.setPixelFactor(5.0)   # bigger -> larger drawings
     return model
 
 # Feeds user's strokes through the RNN so it remembers the drawing
 # Return model state or None if there aren't enough strokes yet 
 def encode_strokes(strokes):
-    print("encoding strokes")
     model = ss.model
 
     if len(strokes) <= 5:
@@ -35,8 +31,7 @@ def encode_strokes(strokes):
 
 
     new_state = model.zeroState()
-    # new_state = model.update(model.zeroInput(), new_state)
-    new_state = model.update([0, 0, 1, 0, 0], new_state)
+    new_state = model.update(model.zero_input(), new_state)
     new_state = model.updateStrokes(strokes, new_state, len(strokes) - 1)
 
     ss.model_state = model.copyState(new_state)
@@ -54,8 +49,6 @@ def encode_strokes(strokes):
 
 
 def initRNNStateFromStrokes(strokes):
-    print("Initializing RNN state")
-    print("Strokes length: ", len(strokes))
     encode_strokes(strokes)
     ss.model_drawing = True
     draw()
@@ -67,7 +60,6 @@ def initRNNStateFromStrokes(strokes):
 
 
 def draw_line(x1, y1, x2, y2, color="#000000", width=2):
-    print('drawing line')
     left, top = min(x1, x2), min(y1, y2)
     w, h = abs(x2 - x1), abs(y2 - y1)
 
@@ -90,13 +82,11 @@ def draw_line(x1, y1, x2, y2, color="#000000", width=2):
 
 # p.draw in JS
 def draw():
-    print("Model is drawing a stroke")
     ss.model_strokes_count += 1
 
     # limit how many strokes the model draws
     # for now because it never stops
     if ss.model_strokes_count > 500:
-        print("STROKE LIMIT")
         return
 
     model = ss.model
@@ -104,11 +94,7 @@ def draw():
     ss.model_state = model.update([ss.dx, ss.dy] + prev_pen, ss.model_state)
     pdf = model.getPDF(ss.model_state, ss.temperature)
 
-
     sample = model.sample(pdf)
-
-    print("Sample:")
-    print(sample)
 
     dx = int(sample[0])
     dy = int(sample[1])
@@ -116,7 +102,6 @@ def draw():
 
     # if pen_end = 1, end
     if pen_state[PEN_END] == 1:
-        print("Model stopped drawing!")
         ss.model_drawing = False
         return
 

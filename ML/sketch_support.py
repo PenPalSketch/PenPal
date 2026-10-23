@@ -217,6 +217,3 @@ def line_to_stroke(line: List[List[float]], last_point: List[float]) -> List[Lis
             stroke.append([dx, dy, pon, poff, 0])
     return stroke
 
-def test():
-    print('hello world')
-    return

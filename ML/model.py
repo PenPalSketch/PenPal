@@ -349,12 +349,6 @@ class SketchRNN:
     # * @returns next LSTMState.
     
     def update(self, stroke, state):
-
-        print("\n\n==== UPDATE")
-        print(stroke)
-        print(state["h"][:10])
-        print("==== UPDATE\n\n")
-
         numUnits = self.numUnits
         s = self.scaleFactor
 
@@ -397,7 +391,6 @@ class SketchRNN:
     #* @returns the final LSTMState.
 
     def updateStrokes(self, strokes, state, steps):
-        print("\n\n====== UPDATE STROKES")
         numUnits = self.numUnits
         s = self.scaleFactor
 
@@ -445,4 +438,3 @@ class SketchRNN:
 
 sketchy = SketchRNN("cat")
 sketchy.initialize()
-print("hello")

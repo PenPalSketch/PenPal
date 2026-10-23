@@ -45,7 +45,6 @@ def restart():
     ss.user_lines = []
     ss.generated_lines = []
     ss.model_state = None
-    print("helol")
 
 # Layout (UI and DOM elements)
 st.title("Pen Pal Canvas")
@@ -129,12 +128,6 @@ def on_new_line(raw_lines):
     raw_line_simplified = model.simplify_line(raw_line)
 
     # the end point of previous line is needed
-    # see p.mouseReleased in JS
-    #   this will make the first displacement of this line very big
-    #   which is useful information because model knows:
-    #   the human ended this line here and then started a new line all the way here
-    #   and that is somehow useful
-
     prev_line_end_point = (0, 0);
     if len(ss.all_raw_lines) > 1:
         prev_line_end_point = ss.all_raw_lines[-2][-1]
@@ -151,10 +144,10 @@ def on_new_line(raw_lines):
 
 # this is called whenever a new stroke was drawn
 if canvas_result.json_data is not None:
-    print("new line")
-
     objects = canvas_result.json_data.get("objects", [])
-    if len(objects) > ss.object_count:                    # more strokes than previous drawing
+
+    # more strokes than previous drawing
+    if len(objects) > ss.object_count:
         on_new_line(objects)
     elif ss.model_drawing:
         draw()
