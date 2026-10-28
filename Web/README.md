@@ -14,9 +14,12 @@ Open **http://127.0.0.1:8000** (rather than opening the HTML file directly).
 You can also serve the frontend on **http://localhost:3000**; completion requests
 always go to **http://localhost:8000/complete**.
 Click **Connect**, hold Space while moving the green pen, and release it to end
-a stroke. Click **Complete** to generate a cat-drawing continuation in blue.
-Each click submits the entire drawing history, including earlier model strokes.
+a stroke and automatically generate a cat-drawing continuation in blue.
+Each release submits the entire drawing history, including earlier model strokes.
 The response is drawn directly onto the canvas and appended to that history.
+Completion requests run one at a time. Losing sight of the pen breaks the drawn
+line but doesn't trigger inference; the camera server sends `{"type":"COMPLETE"}`
+only when Space is released.
 **Clear** erases the drawing and history. Q closes the camera session;
 Ctrl+C stops a server.
 
