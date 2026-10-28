@@ -36,6 +36,26 @@ ss.setdefault("user_lines", [])
 
 ss.setdefault("model_strokes_count", 0)
 
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background: transparent;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+HTML_PATH = Path(__file__).resolve().parent / "background.html"
+
+background = HTML_PATH.read_text(encoding="utf-8")
+
+st.html(
+    background,
+    unsafe_allow_javascript=True,
+)
+
 # Update Functions
 def restart():
     ss.canvas_key += 1 # new key results in a new empty canvas
