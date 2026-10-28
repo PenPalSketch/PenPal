@@ -9,6 +9,9 @@ if str(ROOT) not in sys.path:
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 from interactive_predict import PEN_DOWN, PEN_UP, draw_line, draw, initRNNStateFromStrokes, load_model
+from plotter.gcode import CanvasToPaper, strokes_to_gcode, write_gcode
+from plotter.send import PlotterError, send_gcode
+from plotter.simulate import render, simulate, summary
 
 CANVAS_WIDTH = 700
 CANVAS_HEIGHT = 400
@@ -36,6 +39,10 @@ ss.setdefault("user_lines", [])
 
 ss.setdefault("model_strokes_count", 0)
 
+# the model's latest turn, for the plotter
+ss.setdefault("model_strokes", [])     # [dx, dy, p1, p2, p3] in canvas pixels
+ss.setdefault("model_anchor", (0, 0))  # canvas point the first delta starts from
+
 # Update Functions
 def restart():
     ss.canvas_key += 1 # new key results in a new empty canvas
@@ -50,6 +57,7 @@ def restart():
     ss.prev_pen_state = [0, 1, 0]
 
     ss.model_state = None
+    ss.model_strokes = []
 
 # Layout (UI and DOM elements)
 st.title("Pen Pal Canvas")
@@ -144,9 +152,6 @@ def on_new_line(raw_lines):
 
     initRNNStateFromStrokes(strokes)
 
-    # pen up after user stopped drawing
-    ss.prev_pen = [0, 1, 0]
-
 
 
 # this is called whenever a new stroke was drawn
@@ -158,4 +163,36 @@ if canvas_result.json_data is not None:
         on_new_line(objects)
     elif ss.model_drawing:
         draw()
+
+
+# Plotter preview: what the plotter would draw for the model's latest turn.
+# Only reached while the model is idle, because draw() reruns the script after every step.
+if ss.model_strokes:
+    st.subheader("Plotter preview")
+    to_paper = CanvasToPaper(CANVAS_WIDTH, CANVAS_HEIGHT)
+    gcode = strokes_to_gcode(to_paper.strokes(ss.model_strokes), to_paper.point(*ss.model_anchor),
+                             max_steps=len(ss.model_strokes))
+    sim = simulate(gcode)
+    human = [[to_paper.point(x, y) for x, y in line] for line in ss.all_raw_lines]
+
+    out = ROOT / "plotter" / "output" / "latest.gcode"
+    out.parent.mkdir(exist_ok=True)
+    write_gcode(gcode, out)
+
+    st.pyplot(render(sim, overlay=human))
+    st.caption(summary(sim) + f" Saved to {out.relative_to(ROOT)}")
+    for w in sim["warnings"]:
+        st.warning(w)
+
+    dl_col, send_col = st.columns(2)
+    dl_col.download_button("Download G-code", "\n".join(gcode) + "\n", file_name="penpal.gcode")
+    dry_run = st.checkbox("Practice run (pretend Arduino)", key="plot_dry_run")
+    if send_col.button("Send to plotter", key="send_plotter", disabled=bool(sim["warnings"])):
+        bar = st.progress(0.0, "Connecting to the plotter...")
+        try:
+            send_gcode(gcode, dry_run=dry_run, log=lambda *a: None,
+                       on_progress=lambda i, n, line: bar.progress(i / n, f"Plotting: line {i} of {n}"))
+            st.success("Practice run done." if dry_run else "Done. The pen should be back at the home corner.")
+        except PlotterError as e:
+            st.error(str(e))
 

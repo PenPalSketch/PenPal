@@ -12,6 +12,7 @@ Jinja2==3.1.6
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 MarkupSafe==3.0.3
+matplotlib==3.11.2
 narwhals==2.26.0
 numpy==2.5.3
 packaging==26.3
@@ -20,6 +21,7 @@ pillow==12.3.0
 protobuf==7.36.2
 pyarrow==25.0.1
 pydeck==0.9.3
+pyserial==3.5
 python-dateutil==2.9.0.post0
 python-multipart==0.0.32
 referencing==0.37.0

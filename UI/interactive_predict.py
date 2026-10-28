@@ -60,6 +60,13 @@ def initRNNStateFromStrokes(strokes):
     print("Initializing RNN state")
     print("Strokes length: ", len(strokes))
     encode_strokes(strokes)
+
+    # New model turn: the human just lifted their pen, and the plotter job starts where they stopped
+    ss.prev_pen_state = [0, 1, 0]
+    ss.model_strokes_count = 0
+    ss.model_anchor = (ss.x, ss.y)
+    ss.model_strokes = []
+
     ss.model_drawing = True
     draw()
 
@@ -144,6 +151,10 @@ def draw():
         ss.dx = dx
         ss.dy = dy
         ss.prev_pen_state = pen_state
+
+        # Keep the move for the plotter. Same layout as gcode.py: the pen state applies to the next move.
+        # The final pen_end sample never gets here, so the plotter draws exactly what the screen does.
+        ss.model_strokes.append([dx, dy] + pen_state)
 
         st.rerun()
 
