@@ -3,19 +3,19 @@ Turns the model's generated strokes into G-code for the CNC plotter.
 Only the ML strokes are converted, never the human's. Everything is in plotter mm.
 """
 
-# ---- Machine settings: placeholders until the plotter is calibrated ----
-# All positions are mm from the pen's home spot (GRBL's X0 Y0), with +X and +Y moving away from home.
-PAPER_BOUNDS = (0, 0, 297, 210)  # (xmin, ymin, xmax, ymax) where the paper sits. Placeholder: A4 landscape at home
-FLIP_Y = True                    # True if +Y moves the pen toward the top of the page (canvas y points down)
-FLIP_X = False                   # True if +X moves the pen toward the left of the page
+# Machine settings. Placeholders until the plotter is calibrated.
+# Positions are mm from the pen's home spot (GRBL's X0 Y0); +X and +Y move away from it.
+PAPER_BOUNDS = (0, 0, 297, 210)  # (xmin, ymin, xmax, ymax) of the paper, A4 landscape for now
+FLIP_Y = True                    # True if +Y moves toward the top of the page (canvas y points down)
+FLIP_X = False                   # True if +X moves toward the left of the page
 FEED = 1500                      # drawing speed, mm/min
-RAPID_RATE = 3000                # pen-up travel speed, mm/min. Match GRBL $110/$111 (only used for time estimates)
+RAPID_RATE = 3000                # pen-up speed, mm/min; match GRBL $110/$111 (only used for time estimates)
 PEN_UP_CMD = "M5"                # servo commands for a GRBL servo fork; Marlin uses "M280 P0 S<angle>"
 PEN_DOWN_CMD = "M3 S90"          # TODO: calibrate S values on the actual servo
 PEN_DELAY = 0.15                 # seconds to wait for the servo to finish moving
 HOME = (0, 0)
-PORT = None                      # Arduino's serial port, e.g. "COM7". None = find the USB Arduino automatically
-BAUD = 115200                    # GRBL's default
+PORT = None                      # Arduino serial port, e.g. "COM7"; None finds it automatically
+BAUD = 115200                    # GRBL default
 
 # Pen index constants (same layout as the model's stroke-5 vectors)
 PEN_DOWN, PEN_UP, PEN_END = 0, 1, 2

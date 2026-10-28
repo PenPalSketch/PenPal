@@ -1,9 +1,9 @@
 """
 Virtual plotter: runs G-code without the hardware so we can check it first.
 
-It reads the G-code roughly the way GRBL would, flags anything that would go wrong on
-the real machine, estimates how long the drawing takes, and draws (or animates) the result.
-The picture shows the page the way the person drawing sees it.
+Reads the G-code roughly the way GRBL would, flags anything that would go wrong on the real
+machine, estimates how long the drawing takes, and draws or animates the result.
+The plot shows the page the way the person drawing sees it.
 
     python plotter/simulate.py file.gcode              # show the drawing
     python plotter/simulate.py file.gcode --animate    # watch it draw
@@ -16,6 +16,7 @@ import math
 import re
 import sys
 from dataclasses import dataclass
+from itertools import accumulate
 from pathlib import Path
 
 from matplotlib.collections import LineCollection
@@ -33,7 +34,7 @@ WORD = re.compile(r"([A-Z])\s*([-+]?(?:\d+\.?\d*|\.\d+))")
 EPS = 1e-6
 
 
-# One thing the machine does: a move (start != end) or a pause (start == end)
+# One thing the machine does: a move, or a pause when start == end
 @dataclass
 class Step:
     x0: float
@@ -42,17 +43,19 @@ class Step:
     y1: float
     pen_down: bool
     seconds: float
-    line: int       # G-code line number, from 1
 
     @property
     def moves(self):
         return abs(self.x1 - self.x0) > EPS or abs(self.y1 - self.y0) > EPS
 
 
-# "G1 X10 F1500 ; comment" -> (("F", 1500.0), ("G", 1.0), ("X", 10.0))
+def strip_comment(line):
+    return re.sub(r"\(.*?\)", "", line).split(";")[0].strip()
+
+
+# "G1 X10 F1500" -> (("F", 1500.0), ("G", 1.0), ("X", 10.0)), sorted so equal commands compare equal
 def _words(line):
-    line = re.sub(r"\(.*?\)", "", line).split(";")[0].upper()
-    return tuple(sorted((l, float(v)) for l, v in WORD.findall(line)))
+    return tuple(sorted((l, float(v)) for l, v in WORD.findall(strip_comment(line).upper())))
 
 
 # Runs G-code lines through a simple model of a GRBL pen plotter.
@@ -75,13 +78,10 @@ def simulate(lines, bounds=PAPER_BOUNDS, pen_up_cmd=PEN_UP_CMD, pen_down_cmd=PEN
     steps = []
     stats = {"draw_mm": 0.0, "travel_mm": 0.0, "pen_lowers": 0}
 
-    # Repeated problems are reported once, with a count
+    # Each problem is reported once: message -> [first line, count]
     found = {}
     def warn(n, msg):
-        if msg in found:
-            found[msg][1] += 1
-        else:
-            found[msg] = [n, 0]
+        found.setdefault(msg, [n, 0])[1] += 1
 
     for n, raw in enumerate(lines, 1):
         words = _words(raw)
@@ -96,7 +96,7 @@ def simulate(lines, bounds=PAPER_BOUNDS, pen_up_cmd=PEN_UP_CMD, pen_down_cmd=PEN
 
         # Pen up / down
         new_pen = None
-        if words == down_key or words == up_key:
+        if words in (down_key, up_key):
             new_pen = words == down_key
         elif ("M", 3) in codes or ("M", 4) in codes or ("M", 5) in codes:
             warn(n, f"pen command differs from the configured ones ({pen_down_cmd!r} / {pen_up_cmd!r})")
@@ -116,9 +116,9 @@ def simulate(lines, bounds=PAPER_BOUNDS, pen_up_cmd=PEN_UP_CMD, pen_down_cmd=PEN
             elif code == ("G", 91):
                 absolute = False
             elif code == ("G", 20):
-                warn(n, "G20 switches to inches; this simulator and gcode.py only use mm")
+                warn(n, "G20 (inches) isn't supported, only mm")
             elif code == ("G", 4):
-                steps.append(Step(x, y, x, y, pen_down, params.get("P", 0.0), n))
+                steps.append(Step(x, y, x, y, pen_down, params.get("P", 0.0)))
             elif code not in (("G", 21), ("M", 2), ("M", 30)):
                 warn(n, f"{code[0]}{code[1]} isn't simulated")
 
@@ -152,23 +152,24 @@ def simulate(lines, bounds=PAPER_BOUNDS, pen_up_cmd=PEN_UP_CMD, pen_down_cmd=PEN
         else:
             stats["travel_mm"] += dist
 
-        steps.append(Step(x, y, nx, ny, pen_down, dist / rate * 60, n))
+        steps.append(Step(x, y, nx, ny, pen_down, dist / rate * 60))
         x, y = nx, ny
 
     if pen_down:
         warn(len(lines), "file ends with the pen still down")
 
     stats["seconds"] = sum(s.seconds for s in steps)
-    warnings = [f"line {n}: {msg}" + (f" (and {more} more time{'s' * (more > 1)})" if more else "")
-                for msg, (n, more) in found.items()]
+    warnings = [f"line {n}: {msg}" + (f" ({count} times)" if count > 1 else "")
+                for msg, (n, count) in found.items()]
     return {"steps": steps, "warnings": warnings, "stats": stats}
 
 
 def summary(sim):
     s = sim["stats"]
-    return (f"Draws {s['draw_mm']:.0f} mm, travels {s['travel_mm']:.0f} mm with the pen up, "
-            f"lowers the pen {s['pen_lowers']} time{'s' * (s['pen_lowers'] != 1)}. "
-            f"About {s['seconds']:.0f} s on the machine (ignores acceleration, so a bit longer in reality).")
+    lowers = s["pen_lowers"]
+    return (f"Draws {s['draw_mm']:.0f} mm and travels {s['travel_mm']:.0f} mm with the pen up, "
+            f"lowering the pen {lowers} time{'' if lowers == 1 else 's'}. "
+            f"About {s['seconds']:.0f} s, not counting acceleration.")
 
 
 def _setup_axes(ax, sim, bounds, flip_x, flip_y):
@@ -217,7 +218,7 @@ def render(sim, bounds=PAPER_BOUNDS, overlay=None, ax=None, flip_x=FLIP_X, flip_
     return ax.figure
 
 
-# Plays the job back in about `seconds`, in the same order and proportions as the machine
+# Plays the job back in about `seconds`, keeping the machine's order and timing proportions
 def animate(sim, bounds=PAPER_BOUNDS, overlay=None, seconds=10, fps=30, flip_x=FLIP_X, flip_y=FLIP_Y):
     import matplotlib.pyplot as plt
     from matplotlib.animation import FuncAnimation
@@ -233,12 +234,8 @@ def animate(sim, bounds=PAPER_BOUNDS, overlay=None, seconds=10, fps=30, flip_x=F
     ax.legend(loc="upper right", fontsize=8)
 
     steps = sim["steps"]
-    ends = []
-    t = 0.0
-    for s in steps:
-        t += s.seconds
-        ends.append(t)
-    total = t
+    ends = list(accumulate(s.seconds for s in steps))   # when each step finishes
+    total = ends[-1] if ends else 0.0
     frames = max(2, int(seconds * fps))
 
     def update(i):
@@ -301,7 +298,7 @@ def self_test():
     check("catches a missing G4 after a pen command", "line 3: pen command not followed" in text)
     check("catches a rapid move with the pen down", "line 4: G0 rapid move" in text)
     check("catches G1 with no feed rate", "line 5: G1 before any feed rate" in text)
-    check("catches drawing off the paper", "line 5: draws outside the paper" in text)
+    check("catches drawing off the paper", "line 5: draws outside the paper (2 times)" in text)
     check("catches ending with the pen down", "pen still down" in text)
 
     # Canvas pixels -> paper mm, 700x400 canvas onto A4 landscape
@@ -312,9 +309,9 @@ def self_test():
     check("canvas bottom-left -> paper bottom-left", all(map(close, m.point(0, 400), (0, y0))))
     check("canvas top-right -> paper top-right", all(map(close, m.point(700, 0), (297, 210 - y0))))
     for fx, fy in ((False, True), (True, False)):
-        m2 = CanvasToPaper(700, 400, bounds=a4, flip_x=fx, flip_y=fy)
-        p, q = m2.point(100, 50), m2.point(130, 90)
-        d = m2.strokes([[30, 40, 1, 0, 0]])[0]
+        flipped = CanvasToPaper(700, 400, bounds=a4, flip_x=fx, flip_y=fy)
+        p, q = flipped.point(100, 50), flipped.point(130, 90)
+        d = flipped.strokes([[30, 40, 1, 0, 0]])[0]
         check(f"deltas agree with points (flip_x={fx}, flip_y={fy})",
               close(p[0] + d[0], q[0]) and close(p[1] + d[1], q[1]) and d[2:] == [1, 0, 0])
 

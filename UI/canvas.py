@@ -10,7 +10,7 @@ import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 from interactive_predict import PEN_DOWN, PEN_UP, draw_line, draw, initRNNStateFromStrokes, load_model
 from plotter.gcode import CanvasToPaper, strokes_to_gcode, write_gcode
-from plotter.send import PlotterError, send_gcode
+from plotter.send import FakeGrbl, PlotterError, send_gcode
 from plotter.simulate import render, simulate, summary
 
 CANVAS_WIDTH = 700
@@ -189,10 +189,12 @@ if ss.model_strokes:
     dry_run = st.checkbox("Practice run (pretend Arduino)", key="plot_dry_run")
     if send_col.button("Send to plotter", key="send_plotter", disabled=bool(sim["warnings"])):
         bar = st.progress(0.0, "Connecting to the plotter...")
+
+        def show_progress(i, n, line):
+            bar.progress(i / n, f"Plotting: line {i} of {n}")
+
         try:
-            send_gcode(gcode, dry_run=dry_run, log=lambda *a: None,
-                       on_progress=lambda i, n, line: bar.progress(i / n, f"Plotting: line {i} of {n}"))
+            send_gcode(gcode, ser=FakeGrbl() if dry_run else None, on_progress=show_progress)
             st.success("Practice run done." if dry_run else "Done. The pen should be back at the home corner.")
         except PlotterError as e:
             st.error(str(e))
-

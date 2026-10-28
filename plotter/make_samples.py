@@ -27,22 +27,18 @@ OUT = Path(__file__).resolve().parent / "output"
 
 
 def circle(cx, cy, r, n=48):
-    return [[cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n)] for i in range(n + 1)]
+    angles = (2 * math.pi * i / n for i in range(n + 1))
+    return [[cx + r * math.cos(a), cy + r * math.sin(a)] for a in angles]
 
 
-# Polylines -> stroke-5 deltas starting from `start`. Each line is drawn, then the pen lifts.
-def lines_to_strokes(lines, start):
-    strokes, last = [], start
+# Polylines (in mm, or in canvas px with a CanvasToPaper) -> G-code.
+# Each polyline is drawn, then the pen lifts and travels to the next one.
+def polylines_to_gcode(lines, to_paper=None):
+    anchor = lines[0][0]
+    strokes, last = [], anchor
     for line in lines:
         strokes += line_to_stroke(line, last)
         last = line[-1]
-    return strokes
-
-
-# Polylines (in mm, or in canvas px with a CanvasToPaper) -> G-code
-def lines_to_gcode(lines, to_paper=None):
-    strokes = lines_to_strokes(lines, lines[0][0])
-    anchor = lines[0][0]
     if to_paper:
         strokes, anchor = to_paper.strokes(strokes), to_paper.point(*anchor)
     return strokes_to_gcode(strokes, anchor, max_steps=len(strokes))
@@ -54,7 +50,7 @@ def ruler():
     ring = circle(x0 + 100, y0 + 25, 20, 72)
     rule = [[x0, y0 + 80], [x0 + 100, y0 + 80]]
     ticks = [[[x0 + 10 * i, y0 + 80], [x0 + 10 * i, y0 + 80 + (8 if i % 5 == 0 else 4)]] for i in range(11)]
-    return lines_to_gcode([square, ring, rule] + ticks)
+    return polylines_to_gcode([square, ring, rule] + ticks)
 
 
 def cat_face():
@@ -70,7 +66,7 @@ def cat_face():
 
     left = [ear, eye, mouth] + whiskers
     lines = [head, nose] + left + [mirror(l) for l in left]
-    return lines_to_gcode(lines, CanvasToPaper(CANVAS_W, CANVAS_H))
+    return polylines_to_gcode(lines, CanvasToPaper(CANVAS_W, CANVAS_H))
 
 
 # The model draws one sketch from scratch. Returns polylines in canvas px, starting at (0, 0).
@@ -114,11 +110,11 @@ def model_cats(temperature=0.2, seed=0, cols=3, rows=2, margin=15):
         xs = [p[0] for l in cat for p in l]
         ys = [p[1] for l in cat for p in l]
         w, h = max(xs) - min(xs), max(ys) - min(ys)
-        k = min(1, (cell_w - 2 * margin) / max(w, 1e-9), (cell_h - 2 * margin) / max(h, 1e-9))
-        cx, cy = (i % cols + 0.5) * cell_w, (i // cols + 0.5) * cell_h
-        mx, my = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
-        lines += [[[cx + (px - mx) * k, cy + (py - my) * k] for px, py in l] for l in cat]
-    return lines_to_gcode(lines, CanvasToPaper(CANVAS_W, CANVAS_H))
+        shrink = min(1, (cell_w - 2 * margin) / max(w, 1e-9), (cell_h - 2 * margin) / max(h, 1e-9))
+        cx, cy = (i % cols + 0.5) * cell_w, (i // cols + 0.5) * cell_h    # cell centre
+        mx, my = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2          # cat centre
+        lines += [[[cx + (px - mx) * shrink, cy + (py - my) * shrink] for px, py in l] for l in cat]
+    return polylines_to_gcode(lines, CanvasToPaper(CANVAS_W, CANVAS_H))
 
 
 def main():

@@ -3,15 +3,15 @@ Sends G-code to the plotter's Arduino (running GRBL) over USB.
 
     python plotter/send.py --list                  # show serial ports
     python plotter/send.py file.gcode --dry-run    # practice run with a pretend Arduino
-    python plotter/send.py file.gcode --check      # the Arduino checks every line, motors don't move
+    python plotter/send.py file.gcode --check      # GRBL checks every line, motors don't move
     python plotter/send.py file.gcode              # plot it
     python plotter/send.py --test                  # self-tests, no hardware needed
 
-Every file goes through the simulator first and isn't sent if it has problems (--force overrides).
+Files go through the simulator first and aren't sent if it finds problems (--force overrides).
 
-GRBL doesn't know where the pen is when it starts: it calls that spot X0 Y0. The Arduino restarts
-whenever a program connects, so put the pen at the home corner before connecting. Every job ends back there.
-Only one program can use the port at a time, so close UGS / CNCjs / the Arduino IDE serial monitor first.
+GRBL takes wherever the pen is at startup as X0 Y0, and the Arduino restarts every time a program
+connects. So put the pen at the home corner before sending; every job ends back there.
+Only one program can hold the port, so close UGS / CNCjs / the Arduino serial monitor first.
 """
 import argparse
 import re
@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from plotter.gcode import BAUD, PORT
-from plotter.simulate import simulate, summary
+from plotter.simulate import simulate, strip_comment, summary
 
 # Common GRBL error codes, to explain a rejected line
 ERRORS = {
@@ -45,38 +45,40 @@ def list_ports():
     return list(list_ports.comports())
 
 
-# The single USB port that looks like an Arduino (Unos show up as "Arduino", clones as "CH340").
-# Bluetooth ports are skipped: opening one can hang.
+# Unos show up as "Arduino", clones as "CH340". Bluetooth ports are skipped because opening one can hang.
+def _looks_like_arduino(port):
+    text = f"{port.description} {port.manufacturer or ''}".lower()
+    return "bluetooth" not in text and any(k in text for k in ("arduino", "ch340", "ch341", "usb"))
+
+
 def find_port():
     ports = list_ports()
-    usb = [p for p in ports if "bluetooth" not in p.description.lower() and
-           any(k in f"{p.description} {p.manufacturer or ''}".lower() for k in ("arduino", "ch340", "ch341", "usb"))]
-    if len(usb) == 1:
-        return usb[0].device
-    listing = "\n".join(f"  {p.device}: {p.description}" for p in ports) or "  (none)"
-    if not usb:
-        raise PlotterError(f"No Arduino found. Is it plugged in by USB? Ports seen:\n{listing}")
-    raise PlotterError(f"Several USB ports found. Pick one with --port, or set PORT in plotter/gcode.py:\n{listing}")
+    arduinos = [p for p in ports if _looks_like_arduino(p)]
+    if len(arduinos) == 1:
+        return arduinos[0].device
+
+    seen = "\n".join(f"  {p.device}: {p.description}" for p in ports) or "  (none)"
+    if not arduinos:
+        raise PlotterError(f"No Arduino found. Is it plugged in? Ports seen:\n{seen}")
+    raise PlotterError(f"More than one possible Arduino. Pick one with --port or PORT in plotter/gcode.py:\n{seen}")
 
 
-# A pretend Arduino running GRBL, for practice runs and tests. Says ok to every line.
+# A pretend Arduino running GRBL, for practice runs and tests. Replies ok to every line.
 # fail_on: text that makes it reply with an error instead. state: what a "?" status query reports.
 class FakeGrbl:
     def __init__(self, fail_on=None, state="Idle"):
         self.sent = []
         self.replies = ["Grbl 1.1h ['$' for help]"]
-        self.fail_on, self.state = fail_on, state
+        self.fail_on = fail_on
+        self.state = state
 
     def write(self, data):
         if data == b"?":
             self.replies.append(f"<{self.state}|MPos:0.000,0.000,0.000|FS:0,0>")
-            return
-        text = data.decode("latin-1")
-        if data in (b"!", b"\x18"):
-            self.sent.append(text)
-            return
-        for line in text.splitlines():
-            if line.strip():
+        elif data in (b"!", b"\x18"):
+            self.sent.append(data.decode())
+        else:
+            for line in data.decode().splitlines():
                 self.sent.append(line)
                 if line == "$X":
                     self.state = "Idle"
@@ -92,7 +94,7 @@ class FakeGrbl:
         pass
 
 
-# Reads replies until one matches `want`, or gives up after `seconds`. Returns it, or None.
+# Reads replies until one passes `want`. Returns it, or None after `seconds`.
 def _wait_for(ser, want, seconds):
     deadline = time.time() + seconds
     while time.time() < deadline:
@@ -102,8 +104,8 @@ def _wait_for(ser, want, seconds):
     return None
 
 
-# Sends one line and waits for GRBL's "ok". GRBL says ok once the line is queued, not when the move
-# finishes, so this only waits long when its queue (about 16 moves) is full.
+# Sends one line and waits for "ok". GRBL replies once the line is queued, not when the move
+# finishes, so this only blocks for long when its queue (about 16 moves) is full.
 def _command(ser, line, timeout=60):
     ser.write((line + "\n").encode())
     deadline = time.time() + timeout
@@ -115,7 +117,7 @@ def _command(ser, line, timeout=60):
             code = reply.split(":", 1)[-1].strip()
             hint = f" ({ERRORS[code]})" if code in ERRORS else ""
             raise PlotterError(f"GRBL rejected {line!r} with {reply}{hint}")
-        # Anything else ([MSG:...], status reports) is just information
+        # Anything else ([MSG:...], status reports) is informational
     raise PlotterError(f"No reply from GRBL to {line!r} after {timeout} s")
 
 
@@ -129,23 +131,26 @@ def connect(port=PORT, baud=BAUD, log=print):
         raise PlotterError(f"Couldn't open {port}: {e}\nIs another program (UGS, CNCjs, Arduino IDE) using it?")
 
     # Opening the port restarts the Arduino, and GRBL prints a banner when it starts.
-    # If this board doesn't restart, a soft reset (Ctrl-X) makes GRBL print it.
+    # Boards that don't restart get a soft reset (Ctrl-X) to print it instead.
     log(f"Connected to {port}, waiting for GRBL...")
-    banner = _wait_for(ser, lambda r: r.lower().startswith("grbl"), 3)
+    def is_banner(reply):
+        return reply.lower().startswith("grbl")
+
+    banner = _wait_for(ser, is_banner, 3)
     if banner is None:
         ser.write(b"\x18")
-        banner = _wait_for(ser, lambda r: r.lower().startswith("grbl"), 3)
+        banner = _wait_for(ser, is_banner, 3)
     if banner is None:
         ser.close()
         raise PlotterError(f"No reply from GRBL on {port}. Is GRBL flashed? "
-                           "(The stepper test sketch in HW/ doesn't understand G-code.)")
+                           "The stepper test sketch in HW/ doesn't understand G-code.")
     log(banner)
     time.sleep(0.2)
     ser.reset_input_buffer()
     return ser
 
 
-# Stops right away: feed hold, then soft reset. Resetting turns the spindle output off, which lifts the pen.
+# Stops immediately: feed hold, then soft reset. The reset turns the spindle output off, which lifts the pen.
 def stop(ser):
     ser.write(b"!")
     time.sleep(0.2)
@@ -158,39 +163,37 @@ def _check_state(ser, unlock, log):
     state = re.split(r"[|,>]", status[1:])[0] if status else "unknown"
     if state.lower().startswith("alarm"):
         if not unlock:
-            raise PlotterError("GRBL is in alarm (usually after a reset mid-move). Put the pen back at the "
-                               "home corner, then run again with --unlock (sends $X).")
+            raise PlotterError("GRBL is in alarm, usually after a reset mid-move. "
+                               "Move the pen back to the home corner and run again with --unlock.")
         log("Unlocking GRBL ($X)")
         _command(ser, "$X")
 
 
 # Sends every line, then waits until the last move has finished
 def stream(ser, lines, on_progress=None):
-    lines = [re.sub(r"\(.*?\)", "", l).split(";")[0].strip() for l in lines]
-    lines = [l for l in lines if l]
+    lines = [l for l in map(strip_comment, lines) if l]
     try:
         for i, line in enumerate(lines, 1):
             _command(ser, line)
             if on_progress:
                 on_progress(i, len(lines), line)
-        _command(ser, "G4 P0", timeout=600)   # GRBL answers once every queued move is done
+        _command(ser, "G4 P0", timeout=600)   # GRBL replies once every queued move is done
     except (PlotterError, KeyboardInterrupt):
         stop(ser)
         raise
 
 
-# The whole job: simulate, connect, check GRBL is ready, send, disconnect.
-# check: GRBL's check mode ($C) reads every line and reports errors without moving anything.
-# ser: an already-open connection (or a FakeGrbl) instead of connecting.
-def send_gcode(lines, port=PORT, dry_run=False, check=False, unlock=False, force=False,
-               on_progress=None, log=print, ser=None):
+# The whole job: simulate, check GRBL is ready, send every line, disconnect.
+# ser: an open connection, or FakeGrbl() for a practice run. If not given, connects to `port`.
+# check: GRBL's check mode ($C), which reads every line and reports errors without moving.
+def send_gcode(lines, ser=None, port=PORT, check=False, unlock=False, force=False, on_progress=None, log=print):
     sim = simulate(lines)
     if sim["warnings"] and not force:
         raise PlotterError("The simulator found problems, so nothing was sent:\n  " + "\n  ".join(sim["warnings"]))
     log(summary(sim))
 
     if ser is None:
-        ser = FakeGrbl() if dry_run else connect(port, log=log)
+        ser = connect(port, log=log)
     try:
         _check_state(ser, unlock, log)
         if check:
@@ -207,15 +210,15 @@ def self_test():
     def check(name, ok):
         print("PASS" if ok else "FAIL", name)
         results.append(ok)
-    quiet = lambda *a: None
+    def quiet(*args):
+        pass
 
     job = ["G21", "G90", "M5", "G4 P0.15", "G0 X10 Y10 ; travel", "M3 S90", "G4 P0.15",
            "G1 X20 Y10 F1500", "M5", "G4 P0.15", "G0 X0 Y0"]
 
     fake = FakeGrbl()
     send_gcode(job, ser=fake, log=quiet)
-    check("sends every line in order, comments removed",
-          fake.sent == [l.split(";")[0].strip() for l in job] + ["G4 P0"])
+    check("sends every line in order, comments removed", fake.sent == [strip_comment(l) for l in job] + ["G4 P0"])
 
     fake = FakeGrbl(fail_on="M3")
     try:
@@ -275,21 +278,19 @@ def main():
         print(f"[{i}/{n}] {line}")
 
     try:
-        send_gcode(Path(a.file).read_text().splitlines(), port=a.port, dry_run=a.dry_run, check=a.check,
-                   unlock=a.unlock, force=a.force, on_progress=progress)
-        if a.check:
-            print("GRBL accepted every line.")
-        elif a.dry_run:
-            print("Practice run done. Nothing was sent to a real Arduino.")
-        else:
-            print("Done. The pen should be back at the home corner.")
+        send_gcode(Path(a.file).read_text().splitlines(), ser=FakeGrbl() if a.dry_run else None,
+                   port=a.port, check=a.check, unlock=a.unlock, force=a.force, on_progress=progress)
     except PlotterError as e:
-        print(f"Stopped: {e}")
-        sys.exit(1)
+        sys.exit(f"Stopped: {e}")
     except KeyboardInterrupt:
-        print("\nStopped. GRBL was reset, so it has lost track of the pen: "
-              "put the pen back at the home corner before the next job.")
-        sys.exit(1)
+        sys.exit("\nStopped. GRBL was reset and lost its position, so move the pen back to the home corner.")
+
+    if a.check:
+        print("GRBL accepted every line.")
+    elif a.dry_run:
+        print("Practice run done. Nothing was sent to a real Arduino.")
+    else:
+        print("Done. The pen should be back at the home corner.")
 
 
 if __name__ == "__main__":
