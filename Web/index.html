@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PenPal WebSocket</title>
+</head>
+<body>
+  <button id="connect">Connect</button>
+  <p id="status" role="status">Disconnected</p>
+
+  <script>
+    const button = document.getElementById("connect");
+    const status = document.getElementById("status");
+
+    button.onclick = () => {
+      button.disabled = true;
+      status.textContent = "Connecting...";
+      const socket = new WebSocket("ws://localhost:8765");
+
+      socket.onopen = () => {
+        status.textContent = "Connected";
+      };
+
+      socket.onclose = (event) => {
+        status.textContent = event.code === 1006
+          ? "Connection failed or lost. Check that the server is running."
+          : "Disconnected";
+        button.disabled = false;
+      };
+    };
+  </script>
+</body>
+</html>
