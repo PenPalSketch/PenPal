@@ -1,5 +1,8 @@
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import uvicorn
 from starlette.applications import Starlette
@@ -88,7 +91,7 @@ app = Starlette(
         CORSMiddleware,
         allow_origins=[
             "http://localhost:3000", "http://127.0.0.1:3000",
-            "http://127.0.0.1:8000",
+            "http://localhost:8000", "http://127.0.0.1:8000",
         ],
         allow_methods=["POST"],
         allow_headers=["Content-Type"],

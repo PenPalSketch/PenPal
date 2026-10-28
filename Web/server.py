@@ -1,18 +1,34 @@
 import asyncio
 import json
-from ctypes import windll
+import platform
 
 import cv2
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
+if platform.system() == "Windows":
+    from ctypes import windll
 
-def is_spacebar_down():
-    return bool(windll.user32.GetAsyncKeyState(0x20) & 0x8000)
+    def is_spacebar_down():
+        return bool(windll.user32.GetAsyncKeyState(0x20) & 0x8000)
+else:
+    from pynput import keyboard as _kb
+
+    _keys_down: set = set()
+
+    def _on_press(key):
+        _keys_down.add(key)
+
+    def _on_release(key):
+        _keys_down.discard(key)
+
+    _kb.Listener(on_press=_on_press, on_release=_on_release, daemon=True).start()
+
+    def is_spacebar_down():
+        return _kb.Key.space in _keys_down
 
 
-def get_pen_center(frame):
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+def get_pen_center(hsv):
     mask = cv2.inRange(hsv, (45, 60, 40), (85, 255, 255))
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     contour = max(contours, key=cv2.contourArea, default=None)
@@ -21,6 +37,15 @@ def get_pen_center(frame):
 
     x, y, width, height = cv2.boundingRect(contour)
     return x + width // 2, y + height // 2
+
+
+def is_led_pen_down(hsv, threshold=300):
+    # Red wraps around in HSV — check both ends of the hue range.
+    mask = cv2.bitwise_or(
+        cv2.inRange(hsv, (0, 210, 210), (10, 255, 255)),
+        cv2.inRange(hsv, (170, 220, 220), (180, 255, 255)),
+    )
+    return cv2.countNonZero(mask) > threshold
 
 
 def draw_pen_status(frame, pen_down):
@@ -44,11 +69,12 @@ async def show_camera(websocket):
             if not ok:
                 break
 
-            center = get_pen_center(frame)
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            center = get_pen_center(hsv)
             if center is not None:
                 cv2.circle(frame, center, 4, (0, 0, 255), -1)
 
-            pen_down = is_spacebar_down()
+            pen_down = is_spacebar_down() or is_led_pen_down(hsv)
             if previous_pen_down and not pen_down:
                 await websocket.send(json.dumps({"type": "COMPLETE"}))
                 drawing = False
