@@ -4,6 +4,7 @@ try:
 except ImportError:
     import sketch_support as support
 
+from numpy._core.numeric import dtype
 import tensorflow as tf
 from typing import TypedDict, Optional
 from pathlib import Path
@@ -123,7 +124,7 @@ class SketchRNN:
         self.setPixelFactor(2.0)
         self.weight_dims = weight_dims
         self.numUnits = self.weight_dims[0][0]; # size of LSTM
-        
+       
         MAXWEIGHT = 10.0
         self.weights = []
         for weightString in weightStrings:
@@ -131,9 +132,8 @@ class SketchRNN:
             N = len(rawWeights)
             rawWeights = MAXWEIGHT* rawWeights / 32767
             self.weights.append(rawWeights)
-        
         self.output_kernel = tf.reshape(
-            tf.convert_to_tensor(self.weights[0]),
+            tf.convert_to_tensor(self.weights[0], dtype=float),
             [self.weight_dims[0][0], self.weight_dims[0][1]]
         )
 
@@ -143,18 +143,18 @@ class SketchRNN:
         )
 
         lstmKernelXH = tf.reshape(
-            tf.convert_to_tensor(self.weights[2]),
+            tf.convert_to_tensor(self.weights[2], dtype=tf.float32),
             [self.weight_dims[2][0], self.weight_dims[2][1]]
         )
 
         lstmKernelHH = tf.reshape(
-            tf.convert_to_tensor(self.weights[3]),
+            tf.convert_to_tensor(self.weights[3], dtype=tf.float32),
             [self.weight_dims[3][0], self.weight_dims[3][1]]
         )
         axis = 0
         self.lstm_kernel = tf.concat(
             [lstmKernelXH, lstmKernelHH],
-            axis=axis
+            axis=axis,
         )
 
         self.lstm_bias = tf.convert_to_tensor(
@@ -211,6 +211,7 @@ class SketchRNN:
             penstate[1],
             penstate[2]
         ]
+        
         return stroke
  
     #* Simplifies line using RDP algorithm
@@ -329,6 +330,7 @@ class SketchRNN:
     # * Match the legacy TensorFlow.js basicLSTMCell
     def basic_lstm_cell(self, forget_bias, lstm_kernel, lstm_bias, x, c, h):
         combined = tf.concat([x, h], axis=1)  
+
         gates = tf.matmul(combined, lstm_kernel) + lstm_bias 
         i, j, f, o = tf.split(gates, 4, axis=1)
 
@@ -360,7 +362,6 @@ class SketchRNN:
         c = tf.convert_to_tensor([state["c"]], dtype=tf.float32) # cell memory context tensor
         h = tf.convert_to_tensor([state["h"]], dtype=tf.float32) # hidden state context tensor
 
-        # apply lstm cell math to update c and h for next iteration
         new_c, new_h = self.basic_lstm_cell(
             self.forget_bias,
             self.lstm_kernel,
@@ -375,6 +376,7 @@ class SketchRNN:
             "c": new_c.numpy()[0],
             "h": new_h.numpy()[0],
         }
+        
 
     #* Updates the RNN on a series of Strokes, returns the next state.
     #*
@@ -434,4 +436,4 @@ class SketchRNN:
 
 sketchy = SketchRNN("cat")
 sketchy.initialize()
-print("hello")
+

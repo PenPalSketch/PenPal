@@ -76,7 +76,6 @@ def sample_softmax(z_sample: Sequence[float]) -> int:
         accumulate += p
         if accumulate >= x:
             return i
-    print("error sampling pi index")
     return -1
 
 
