@@ -8,21 +8,53 @@
 <body>
   <button id="connect">Connect</button>
   <p id="status" role="status">Disconnected</p>
+  <canvas id="canvas" width="640" height="480" style="border: 1px solid #ccc; max-width: 100%;"></canvas>
 
   <script>
     const button = document.getElementById("connect");
     const status = document.getElementById("status");
+    const canvas = document.getElementById("canvas");
+    const context = canvas.getContext("2d");
 
     button.onclick = () => {
       button.disabled = true;
       status.textContent = "Connecting...";
       const socket = new WebSocket("ws://localhost:8765");
+      let previous = null;
 
       socket.onopen = () => {
         status.textContent = "Connected";
       };
 
+      socket.onmessage = (event) => {
+        const { pen_down, x, y, width, height } = JSON.parse(event.data);
+        if (!pen_down) {
+          previous = null;
+          return;
+        }
+
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+          previous = null;
+        }
+
+        context.lineWidth = 4;
+        context.lineCap = "round";
+        context.beginPath();
+        if (previous) {
+          context.moveTo(previous.x, previous.y);
+          context.lineTo(x, y);
+          context.stroke();
+        } else {
+          context.arc(x, y, 2, 0, Math.PI * 2);
+          context.fill();
+        }
+        previous = { x, y };
+      };
+
       socket.onclose = (event) => {
+        previous = null;
         status.textContent = event.code === 1006
           ? "Connection failed or lost. Check that the server is running."
           : "Disconnected";

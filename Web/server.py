@@ -32,6 +32,7 @@ def draw_pen_status(frame, pen_down):
 async def show_camera(websocket):
     camera = cv2.VideoCapture(0)
     window = "Camera - Q to quit"
+    drawing = False
     try:
         if not camera.isOpened():
             print("Could not open camera")
@@ -48,7 +49,16 @@ async def show_camera(websocket):
 
             pen_down = is_spacebar_down()
             if pen_down and center is not None:
-                await websocket.send(json.dumps({"x": center[0], "y": center[1]}))
+                height, width = frame.shape[:2]
+                await websocket.send(json.dumps({
+                    "pen_down": True,
+                    "x": center[0], "y": center[1],
+                    "width": width, "height": height,
+                }))
+                drawing = True
+            elif drawing:
+                await websocket.send(json.dumps({"pen_down": False}))
+                drawing = False
 
             draw_pen_status(frame, pen_down)
             cv2.imshow(window, frame)
