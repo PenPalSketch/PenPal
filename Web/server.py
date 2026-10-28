@@ -1,8 +1,10 @@
 import asyncio
+import json
 from ctypes import windll
 
 import cv2
 from websockets.asyncio.server import serve
+from websockets.exceptions import ConnectionClosed
 
 
 def is_spacebar_down():
@@ -19,6 +21,12 @@ def get_pen_center(frame):
 
     x, y, width, height = cv2.boundingRect(contour)
     return x + width // 2, y + height // 2
+
+
+def draw_pen_status(frame, pen_down):
+    status = "PEN DOWN" if pen_down else "PEN UP"
+    color = (0, 200, 0) if pen_down else (0, 0, 255)
+    cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
 
 
 async def show_camera(websocket):
@@ -39,10 +47,10 @@ async def show_camera(websocket):
                 cv2.circle(frame, center, 4, (0, 0, 255), -1)
 
             pen_down = is_spacebar_down()
-            status = "PEN DOWN" if pen_down else "PEN UP"
-            color = (0, 200, 0) if pen_down else (0, 0, 255)
-            cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+            if pen_down and center is not None:
+                await websocket.send(json.dumps({"x": center[0], "y": center[1]}))
 
+            draw_pen_status(frame, pen_down)
             cv2.imshow(window, frame)
             # Drain repeated key presses so window updates don't get held up.
             while (key := cv2.pollKey()) != -1:
@@ -51,6 +59,8 @@ async def show_camera(websocket):
 
             # Let the server process connection events between frames.
             await asyncio.sleep(0.01)
+    except ConnectionClosed:
+        pass
     finally:
         camera.release()
         cv2.destroyAllWindows()
