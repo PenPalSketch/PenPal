@@ -3,23 +3,64 @@ Turns the model's generated strokes into G-code for the CNC plotter.
 Only the ML strokes are converted, never the human's. Everything is in plotter mm.
 """
 
+# ---- Machine settings: placeholders until the plotter is calibrated ----
+# All positions are mm from the pen's home spot (GRBL's X0 Y0), with +X and +Y moving away from home.
+PAPER_BOUNDS = (0, 0, 297, 210)  # (xmin, ymin, xmax, ymax) where the paper sits. Placeholder: A4 landscape at home
+FLIP_Y = True                    # True if +Y moves the pen toward the top of the page (canvas y points down)
+FLIP_X = False                   # True if +X moves the pen toward the left of the page
+FEED = 1500                      # drawing speed, mm/min
+RAPID_RATE = 3000                # pen-up travel speed, mm/min. Match GRBL $110/$111 (only used for time estimates)
+PEN_UP_CMD = "M5"                # servo commands for a GRBL servo fork; Marlin uses "M280 P0 S<angle>"
+PEN_DOWN_CMD = "M3 S90"          # TODO: calibrate S values on the actual servo
+PEN_DELAY = 0.15                 # seconds to wait for the servo to finish moving
+HOME = (0, 0)
+PORT = None                      # Arduino's serial port, e.g. "COM7". None = find the USB Arduino automatically
+BAUD = 115200                    # GRBL's default
+
 # Pen index constants (same layout as the model's stroke-5 vectors)
 PEN_DOWN, PEN_UP, PEN_END = 0, 1, 2
 
-# strokes:  [[dx, dy, penDown, penUp, penEnd], ...] from model.sample()
+
+# Maps canvas pixels (origin top-left, y down) onto the paper in mm.
+# The canvas is scaled to fit inside the paper without stretching, and centred.
+class CanvasToPaper:
+    def __init__(self, canvas_w, canvas_h, bounds=PAPER_BOUNDS, flip_x=FLIP_X, flip_y=FLIP_Y):
+        xmin, ymin, xmax, ymax = bounds
+        self.scale = min((xmax - xmin) / canvas_w, (ymax - ymin) / canvas_h)   # mm per pixel
+        self.x0 = xmin + ((xmax - xmin) - canvas_w * self.scale) / 2
+        self.y0 = ymin + ((ymax - ymin) - canvas_h * self.scale) / 2
+        self.canvas_w, self.canvas_h = canvas_w, canvas_h
+        self.flip_x, self.flip_y = flip_x, flip_y
+
+    # Absolute canvas point -> (x, y) mm
+    def point(self, x, y):
+        if self.flip_x:
+            x = self.canvas_w - x
+        if self.flip_y:
+            y = self.canvas_h - y
+        return (self.x0 + x * self.scale, self.y0 + y * self.scale)
+
+    # Stroke-5 deltas in pixels -> the same strokes in mm (pen states unchanged)
+    def strokes(self, strokes):
+        sx = -self.scale if self.flip_x else self.scale
+        sy = -self.scale if self.flip_y else self.scale
+        return [[s[0] * sx, s[1] * sy] + list(s[2:]) for s in strokes]
+
+
+# strokes:  [[dx, dy, penDown, penUp, penEnd], ...] from model.sample(), in mm (see CanvasToPaper)
 # anchor:   (x, y) mm, end of the human's last pen-down line. The first delta is measured from here.
 # bounds:   (xmin, ymin, xmax, ymax) mm, the drawable area of the paper
 # Returns a list of G-code lines
 def strokes_to_gcode(
     strokes,
     anchor,
-    bounds,
-    feed=1500,              # drawing speed, mm/min
-    pen_up_cmd="M5",        # servo commands for a GRBL servo fork; Marlin uses "M280 P0 S<angle>"
-    pen_down_cmd="M3 S90",  # TODO: calibrate S values on the actual servo
-    pen_delay=0.15,         # seconds to wait for the servo to finish moving
-    home=(0, 0),
-    max_steps=250,          # the model doesn't always emit penEnd
+    bounds=PAPER_BOUNDS,
+    feed=FEED,                  # drawing speed, mm/min
+    pen_up_cmd=PEN_UP_CMD,
+    pen_down_cmd=PEN_DOWN_CMD,
+    pen_delay=PEN_DELAY,        # seconds to wait for the servo to finish moving
+    home=HOME,
+    max_steps=250,              # the model doesn't always emit penEnd
 ):
     # The servo moves on its own and the firmware doesn't wait for it,
     # so pause after every pen command or the pen drags/skips at stroke starts.
