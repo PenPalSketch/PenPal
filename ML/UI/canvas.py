@@ -2,16 +2,16 @@ import sys
 from pathlib import Path
 import random
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 from interactive_predict import PEN_DOWN, PEN_UP, draw_line, draw, initRNNStateFromStrokes, load_model
-from HW.StepperMotor.plotter.gcode import CanvasToPaper, strokes_to_gcode, write_gcode
-from HW.StepperMotor.plotter.send import FakeGrbl, PlotterError, send_gcode
-from HW.StepperMotor.plotter.simulate import render, simulate, summary
+from HW.Plotter.gcode import CanvasToPaper, strokes_to_gcode, write_gcode
+from HW.Plotter.send import FakeGrbl, PlotterError, send_gcode
+from HW.Plotter.simulate import render, simulate, summary
 
 CANVAS_WIDTH = 700
 CANVAS_HEIGHT = 400
@@ -175,8 +175,8 @@ if ss.model_strokes:
     sim = simulate(gcode)
     human = [[to_paper.point(x, y) for x, y in line] for line in ss.all_raw_lines]
 
-    out = ROOT / "plotter" / "output" / "latest.gcode"
-    out.parent.mkdir(exist_ok=True)
+    out = ROOT / "HW" / "Plotter" / "output" / "latest.gcode"
+    out.parent.mkdir(parents=True, exist_ok=True)
     write_gcode(gcode, out)
 
     st.pyplot(render(sim, overlay=human))

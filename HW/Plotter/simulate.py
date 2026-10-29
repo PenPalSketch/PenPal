@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from HW.StepperMotor.plotter.gcode import (FLIP_X, FLIP_Y, HOME, PAPER_BOUNDS, PEN_DOWN_CMD, PEN_UP_CMD,
+from Plotter.gcode import (FLIP_X, FLIP_Y, HOME, PAPER_BOUNDS, PEN_DOWN_CMD, PEN_UP_CMD,
                            RAPID_RATE, CanvasToPaper, strokes_to_gcode)
 
 WORD = re.compile(r"([A-Z])\s*([-+]?(?:\d+\.?\d*|\.\d+))")

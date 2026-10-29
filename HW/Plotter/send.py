@@ -23,8 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from HW.StepperMotor.plotter.gcode import BAUD, PORT
-from HW.StepperMotor.plotter.simulate import simulate, strip_comment, summary
+from Plotter.gcode import BAUD, PORT
+from Plotter.simulate import simulate, strip_comment, summary
 
 # Common GRBL error codes, to explain a rejected line
 ERRORS = {
