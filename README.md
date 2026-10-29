@@ -6,7 +6,9 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r ML/requirements.txt
+
 pip install -r CV/requirements.txt
+
 pip install -r HW/requirements.txt
 
 ## To run the UI
