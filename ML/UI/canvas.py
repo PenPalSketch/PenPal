@@ -9,9 +9,9 @@ if str(ROOT) not in sys.path:
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 from interactive_predict import PEN_DOWN, PEN_UP, draw_line, draw, initRNNStateFromStrokes, load_model
-from plotter.gcode import CanvasToPaper, strokes_to_gcode, write_gcode
-from plotter.send import FakeGrbl, PlotterError, send_gcode
-from plotter.simulate import render, simulate, summary
+from HW.StepperMotor.plotter.gcode import CanvasToPaper, strokes_to_gcode, write_gcode
+from HW.StepperMotor.plotter.send import FakeGrbl, PlotterError, send_gcode
+from HW.StepperMotor.plotter.simulate import render, simulate, summary
 
 CANVAS_WIDTH = 700
 CANVAS_HEIGHT = 400

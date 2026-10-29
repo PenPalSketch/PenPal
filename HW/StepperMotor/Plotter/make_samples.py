@@ -14,13 +14,13 @@ import random
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ML.sketch_support import line_to_stroke
-from plotter.gcode import PAPER_BOUNDS, CanvasToPaper, strokes_to_gcode, write_gcode
-from plotter.simulate import render, simulate, summary
+from HW.StepperMotor.plotter.gcode import PAPER_BOUNDS, CanvasToPaper, strokes_to_gcode, write_gcode
+from HW.StepperMotor.plotter.simulate import render, simulate, summary
 
 CANVAS_W, CANVAS_H = 700, 400       # same as UI/canvas.py
 OUT = Path(__file__).resolve().parent / "output"
