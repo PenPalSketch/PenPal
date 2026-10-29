@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PenPal WebSocket</title>
+</head>
+<body>
+  <button id="connect">Connect</button>
+  <button id="clear">Clear</button>
+  <p id="status" role="status">Disconnected</p>
+  <p id="completion-status" role="status"></p>
+  <canvas id="canvas" width="640" height="480" style="border: 1px solid #ccc; max-width: 100%;"></canvas>
+
+  <script>
+    const button = document.getElementById("connect");
+    const status = document.getElementById("status");
+    const canvas = document.getElementById("canvas");
+    const context = canvas.getContext("2d");
+    const completionStatus = document.getElementById("completion-status");
+    let history = [];
+    let completion = Promise.resolve();
+
+    function drawPoint(point, previous, color = "black") {
+      const [x, y] = point;
+      context.lineWidth = 4;
+      context.lineCap = "round";
+      context.strokeStyle = color;
+      context.fillStyle = color;
+      context.beginPath();
+      if (previous) {
+        context.moveTo(previous[0], previous[1]);
+        context.lineTo(x, y);
+        context.stroke();
+      } else {
+        context.arc(x, y, 2, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+
+    async function fetchAndDrawCompletion() {
+      const response = await fetch("http://localhost:8000/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strokes: history }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) throw new Error(result.error);
+      for (const path of result.strokes) {
+        path.forEach((point, i) => drawPoint(point, path[i - 1], "blue"));
+      }
+      history.push(...result.strokes);
+    }
+
+    document.getElementById("clear").onclick = () => {
+      history = [];
+      completionStatus.textContent = "";
+      context.clearRect(0, 0, canvas.width, canvas.height);
+    };
+
+    async function completeDrawing() {
+      completionStatus.textContent = "Completing...";
+      try {
+        await fetchAndDrawCompletion();
+        completionStatus.textContent = "";
+      } catch (error) {
+        completionStatus.textContent = error.message;
+      }
+    }
+
+    button.onclick = () => {
+      button.disabled = true;
+      status.textContent = "Connecting...";
+      const socket = new WebSocket("ws://localhost:8765");
+      let currentStroke = null;
+
+      socket.onopen = () => {
+        status.textContent = "Connected";
+      };
+
+      socket.onmessage = (event) => {
+        const { type, pen_down, x, y, width, height } = JSON.parse(event.data);
+        if (type === "COMPLETE") {
+          currentStroke = null;
+          completion = completion.then(completeDrawing);
+          return;
+        }
+        if (!pen_down) {
+          currentStroke = null;
+          return;
+        }
+
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+          history = [];
+          currentStroke = null;
+        }
+
+        if (!currentStroke || history[history.length - 1] !== currentStroke) {
+          currentStroke = [];
+          history.push(currentStroke);
+        }
+        drawPoint([x, y], currentStroke[currentStroke.length - 1]);
+        currentStroke.push([x, y]);
+      };
+
+      socket.onclose = (event) => {
+        currentStroke = null;
+        status.textContent = event.code === 1006
+          ? "Connection failed or lost. Check that the server is running."
+          : "Disconnected";
+        button.disabled = false;
+      };
+    };
+  </script>
+</body>
+</html>

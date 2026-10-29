@@ -436,5 +436,6 @@ class SketchRNN:
             "h": new_h.numpy()[0],
         }
 
-sketchy = SketchRNN("cat")
-sketchy.initialize()
+if __name__ == "__main__":
+    sketchy = SketchRNN("cat")
+    sketchy.initialize()
