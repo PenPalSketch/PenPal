@@ -7,25 +7,21 @@ import numpy as np
 
 import streamlit as st
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from ML.model import SketchRNN
 
 # Pen index constants
 PEN_DOWN, PEN_UP, PEN_END = 0, 1, 2
 
 ss = st.session_state
 
-AVAILABLE_MODELS = ['bird', 'ant','ambulance','angel','alarm_clock','antyoga','backpack','barn','basket','bear','bee','beeflower','bicycle','book','brain','bridge','bulldozer','bus','butterfly','cactus','calendar','castle','cat','catbus','catpig','chair','couch','crab','crabchair','crabrabbitfacepig','cruise_ship','diving_board','dog','dogbunny','dolphin','duck','elephant','elephantpig','everything','eye','face','fan','fire_hydrant','firetruck','flamingo','flower','floweryoga','frog','frogsofa','garden','hand','hedgeberry','hedgehog','helicopter','kangaroo','key','lantern','lighthouse','lion','lionsheep','lobster','map','mermaid','monapassport','monkey','mosquito','octopus','owl','paintbrush','palm_tree','parrot','passport','peas','penguin','pig','pigsheep','pineapple','pool','postcard','power_outlet','rabbit','rabbitturtle','radio','radioface','rain','rhinoceros','rifle','roller_coaster','sandwich','scorpion','sea_turtle','sheep','skull','snail','snowflake','speedboat','spider','squirrel','steak','stove','strawberry','swan','swing_set','the_mona_lisa','tiger','toothbrush','toothpaste','tractor','trombone','truck','whale','windmill','yoga','yogabicycle']
-BASE_URL = "https://storage.googleapis.com/quickdraw-models/sketchRNN/models/"
-
-from model import SketchRNN
-
 # same as js's initModel()
 def load_model():
     model = SketchRNN("url")
     model.initialize()
-    print("SketchRNN model loaded")
     model.setPixelFactor(5.0)   # bigger -> larger drawings
     return model
 
@@ -38,14 +34,13 @@ def encode_strokes(strokes):
         return None
 
     new_state = model.zeroState()
-    new_state = model.update([0, 0, 1, 0, 0], new_state)
+    new_state = model.update(model.zero_input(), new_state)
     new_state = model.updateStrokes(strokes, new_state, len(strokes) - 1)
 
     ss.model_state = model.copyState(new_state)
 
     # set x and y
     last_point = ss.all_raw_lines[-1][-1]
-    last_last_point = ss.all_raw_lines[-1][-2]
 
     ss.x = last_point[0]
     ss.y = last_point[1]
@@ -57,8 +52,11 @@ def encode_strokes(strokes):
 
 
 def initRNNStateFromStrokes(strokes):
-    print("Initializing RNN state")
-    print("Strokes length: ", len(strokes))
+    if len(strokes) <= 5:
+        ss.model_drawing = False
+        ss.model_strokes = []
+        return
+
     encode_strokes(strokes)
 
     # New model turn: the human just lifted their pen, and the plotter starts where they stopped
@@ -113,10 +111,8 @@ def to_serializable(obj):
 def draw():
     ss.model_strokes_count += 1
 
-    # limit how many strokes the model draws
-    # for now because it never stops
     if ss.model_strokes_count > 500:
-        print("STROKE LIMIT")
+        ss.model_drawing = False
         return
 
     model = ss.model
@@ -131,21 +127,16 @@ def draw():
     dy = int(sample[1])
     pen_state = sample[2:]
 
-    # if pen_end = 1, end
+    # if drawing is finished
     if pen_state[PEN_END] == 1:
-        print("Model stopped drawing!")
         ss.model_drawing = False
         return
-
-    # if previous drawing is finished, start a new one
-    if pen_state[PEN_END] == 1:
-        # initRNNStateFromStrokes(ss.strokes)
-        pass
     else:
         if prev_pen[PEN_DOWN] == 1:
             draw_line(ss.x, ss.y, ss.x + dx, ss.y + dy)
             pass
-        # update
+
+        # update cursor
         ss.x += dx
         ss.y += dy
         ss.dx = dx
@@ -156,5 +147,3 @@ def draw():
         ss.model_strokes.append([dx, dy] + pen_state)
 
         st.rerun()
-
-

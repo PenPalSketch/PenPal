@@ -124,7 +124,7 @@ class SketchRNN:
         self.setPixelFactor(2.0)
         self.weight_dims = weight_dims
         self.numUnits = self.weight_dims[0][0]; # size of LSTM
-       
+
         MAXWEIGHT = 10.0
         self.weights = []
         for weightString in weightStrings:
@@ -211,7 +211,7 @@ class SketchRNN:
             penstate[1],
             penstate[2]
         ]
-        
+
         return stroke
  
     #* Simplifies line using RDP algorithm
@@ -303,6 +303,8 @@ class SketchRNN:
 
         return pdf
 
+    def zero_input(self):
+        return [0, 0, 1, 0, 0]
 
     #* Returns the zero/initial state of the model
     #*
@@ -376,7 +378,7 @@ class SketchRNN:
             "c": new_c.numpy()[0],
             "h": new_h.numpy()[0],
         }
-        
+
 
     #* Updates the RNN on a series of Strokes, returns the next state.
     #*
@@ -434,6 +436,6 @@ class SketchRNN:
             "h": new_h.numpy()[0],
         }
 
-sketchy = SketchRNN("cat")
-sketchy.initialize()
-
+if __name__ == "__main__":
+    sketchy = SketchRNN("cat")
+    sketchy.initialize()

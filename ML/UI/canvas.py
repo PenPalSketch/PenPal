@@ -8,7 +8,7 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
-from interactive_predict import PEN_DOWN, PEN_UP, draw_line, draw, initRNNStateFromStrokes, load_model
+from interactive_predict import draw, initRNNStateFromStrokes, load_model
 from HW.Plotter.gcode import CanvasToPaper, strokes_to_gcode, write_gcode
 from HW.Plotter.send import FakeGrbl, PlotterError, send_gcode
 from HW.Plotter.simulate import render, simulate, summary
@@ -57,6 +57,8 @@ def restart():
     ss.prev_pen_state = [0, 1, 0]
 
     ss.model_state = None
+    ss.model_drawing = False
+    ss.model_strokes_count = 0
     ss.model_strokes = []
 
 # Layout (UI and DOM elements)
@@ -138,7 +140,7 @@ def on_new_line(raw_lines):
 
     ss.all_raw_lines.append(raw_line)
 
-    raw_line_simplified = model.simplify_line(raw_line, 2)
+    raw_line_simplified = model.simplify_line(raw_line, 1.5)
 
     # the end point of previous line is needed
     prev_line_end_point = (0, 0)
@@ -148,10 +150,9 @@ def on_new_line(raw_lines):
     stroke = model.line_to_stroke(raw_line_simplified, prev_line_end_point)
     stroke.pop(0)
 
-    strokes = ss.strokes + stroke
+    ss.strokes = ss.strokes + stroke
 
-    initRNNStateFromStrokes(strokes)
-
+    initRNNStateFromStrokes(ss.strokes)
 
 
 # this is called whenever a new stroke was drawn
