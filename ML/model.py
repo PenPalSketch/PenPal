@@ -214,44 +214,6 @@ class SketchRNN:
 
         return stroke
 
-    def generate_stroke(self, state, position, pen_down, temperature=0.65, *, allow_end=True):
-        """Return one stroke, the updated recurrent state, and the cursor position.
-
-        Stop at a pen lift or end-of-drawing. The stroke's `finished` flag marks
-        end-of-drawing; its points and samples exclude that terminal token.
-        """
-        x, y = position
-        points, samples = [], []
-        for _ in range(500):
-            pdf = self.getPDF(state, temperature)
-            if not allow_end:
-                pdf["pen"][2] = 0
-                pdf["pen"] /= pdf["pen"].sum()
-            sample = self.sample(pdf)
-            if sample[4] == 1:
-                break
-
-            dx, dy = float(sample[0]), float(sample[1])
-            next_x, next_y = x + dx, y + dy
-
-            # The previous pen state controls whether this movement draws.
-            if pen_down:
-                if not points:
-                    points.append([x, y])
-                points.append([next_x, next_y])
-
-            x, y = next_x, next_y
-            pen_down = bool(sample[2])
-            samples.append([dx, dy, *sample[2:]])
-            state = self.update(sample, state)
-            if points and not pen_down:
-                break
-        else:
-            raise RuntimeError("Stroke did not finish within 500 steps.")
-
-        stroke = {"points": points, "samples": samples, "finished": bool(sample[4])}
-        return stroke, state, (x, y)
- 
     #* Simplifies line using RDP algorithm
     #*
     #* @param line list of points [[x0, y0], [x1, y1], ...]

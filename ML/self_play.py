@@ -11,6 +11,38 @@ NUM_TURNS = 20
 TEMPERATURE = 0.25
 
 
+def generate_stroke(model, state, position, pen_down):
+    """Generate one stroke and return it with the updated state and position."""
+    # Group the model's movements into one stroke so we can count turns.
+    # Streamlit draws each movement as it goes, using st.rerun().
+    x, y = position
+    points, samples = [], []
+    for _ in range(500):
+        pdf = model.getPDF(state, TEMPERATURE)
+        # Disable end-of-drawing so the demo reaches NUM_TURNS strokes.
+        pdf["pen"][2] = 0
+        pdf["pen"] /= pdf["pen"].sum()
+        sample = model.sample(pdf)
+        dx, dy = float(sample[0]), float(sample[1])
+        next_x, next_y = x + dx, y + dy
+
+        # The previous pen state controls whether this movement draws.
+        if pen_down:
+            if not points:
+                points.append([x, y])
+            points.append([next_x, next_y])
+
+        x, y = next_x, next_y
+        pen_down = bool(sample[2])
+        samples.append([dx, dy, *sample[2:]])
+        state = model.update(sample, state)
+        if points and not pen_down:
+            stroke = {"points": points, "samples": samples, "finished": False}
+            return stroke, state, (x, y)
+
+    raise RuntimeError("Stroke did not finish within 500 steps.")
+
+
 def generate_turns(model):
     state = model.update(model.zero_input(), model.zeroState())
     position = (0.0, 0.0)
@@ -18,9 +50,7 @@ def generate_turns(model):
     history = []
 
     for turn in range(1, NUM_TURNS + 1):
-        stroke, state, position = model.generate_stroke(
-            state, position, pen_down, TEMPERATURE, allow_end=False,
-        )
+        stroke, state, position = generate_stroke(model, state, position, pen_down)
         pen_down = False  # Each completed stroke ends with the pen lifted.
         history.append({"turn": turn, **stroke})
         print(f"Turn {turn}/{NUM_TURNS}: {len(stroke['points']) - 1} drawn segments", flush=True)
