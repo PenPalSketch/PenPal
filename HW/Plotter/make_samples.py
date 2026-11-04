@@ -1,7 +1,7 @@
 """
-Makes test G-code files in plotter/output from drawings where we know what the right answer looks like.
+Makes test G-code files in HW/Plotter/output from drawings where we know what the right answer looks like.
 
-    python plotter/make_samples.py
+    python HW/Plotter/make_samples.py
 
 sample_ruler.gcode        a 50 mm square, a 40 mm circle and a 100 mm ruler, drawn directly in mm.
                           Measure them on the paper to check the plotter's steps per mm.
@@ -19,10 +19,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ML.sketch_support import line_to_stroke
-from Plotter.gcode import PAPER_BOUNDS, CanvasToPaper, strokes_to_gcode, write_gcode
-from Plotter.simulate import render, simulate, summary
+from HW.Plotter.gcode import PAPER_BOUNDS, CanvasToPaper, strokes_to_gcode, write_gcode
+from HW.Plotter.simulate import render, simulate, summary
 
-CANVAS_W, CANVAS_H = 700, 400       # same as UI/canvas.py
+CANVAS_W, CANVAS_H = 700, 400       # same as ML/UI/canvas.py
 OUT = Path(__file__).resolve().parent / "output"
 
 

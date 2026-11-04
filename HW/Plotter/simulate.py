@@ -5,10 +5,10 @@ Reads the G-code roughly the way GRBL would, flags anything that would go wrong 
 machine, estimates how long the drawing takes, and draws or animates the result.
 The plot shows the page the way the person drawing sees it.
 
-    python plotter/simulate.py file.gcode              # show the drawing
-    python plotter/simulate.py file.gcode --animate    # watch it draw
-    python plotter/simulate.py file.gcode --out a.png  # save a picture (.gif saves the animation)
-    python plotter/simulate.py --test                  # run the self-tests
+    python HW/Plotter/simulate.py file.gcode              # show the drawing
+    python HW/Plotter/simulate.py file.gcode --animate    # watch it draw
+    python HW/Plotter/simulate.py file.gcode --out a.png  # save a picture (.gif saves the animation)
+    python HW/Plotter/simulate.py --test                  # run the self-tests
 """
 import argparse
 import bisect

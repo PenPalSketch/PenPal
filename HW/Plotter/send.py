@@ -1,11 +1,11 @@
 """
 Sends G-code to the plotter's Arduino (running GRBL) over USB.
 
-    python plotter/send.py --list                  # show serial ports
-    python plotter/send.py file.gcode --dry-run    # practice run with a pretend Arduino
-    python plotter/send.py file.gcode --check      # GRBL checks every line, motors don't move
-    python plotter/send.py file.gcode              # plot it
-    python plotter/send.py --test                  # self-tests, no hardware needed
+    python HW/Plotter/send.py --list                  # show serial ports
+    python HW/Plotter/send.py file.gcode --dry-run    # practice run with a pretend Arduino
+    python HW/Plotter/send.py file.gcode --check      # GRBL checks every line, motors don't move
+    python HW/Plotter/send.py file.gcode              # plot it
+    python HW/Plotter/send.py --test                  # self-tests, no hardware needed
 
 Files go through the simulator first and aren't sent if it finds problems (--force overrides).
 
