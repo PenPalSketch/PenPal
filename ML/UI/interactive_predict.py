@@ -2,12 +2,16 @@ import sys
 from pathlib import Path
 import random
 import math
-import streamlit as st
-from ML.model import SketchRNN
+import json
+import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
+import streamlit as st
+
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from ML.model import SketchRNN
 
 # Pen index constants
 PEN_DOWN, PEN_UP, PEN_END = 0, 1, 2
@@ -29,7 +33,6 @@ def encode_strokes(strokes):
     if len(strokes) <= 5:
         return None
 
-
     new_state = model.zeroState()
     new_state = model.update(model.zero_input(), new_state)
     new_state = model.updateStrokes(strokes, new_state, len(strokes) - 1)
@@ -38,7 +41,6 @@ def encode_strokes(strokes):
 
     # set x and y
     last_point = ss.all_raw_lines[-1][-1]
-    last_last_point = ss.all_raw_lines[-1][-2]
 
     ss.x = last_point[0]
     ss.y = last_point[1]
@@ -49,10 +51,21 @@ def encode_strokes(strokes):
     ss.dy = s[1]
 
 
-
 def initRNNStateFromStrokes(strokes):
-    ss.keep_drawing = True
+    if len(strokes) <= 5:
+        ss.model_drawing = False
+        ss.model_strokes = []
+        return
+
     encode_strokes(strokes)
+
+    # New model turn: the human just lifted their pen, and the plotter starts where they stopped
+    ss.prev_pen_state = [0, 1, 0]
+    ss.model_strokes_count = 0
+    ss.model_anchor = (ss.x, ss.y)
+    ss.model_strokes = []
+
+    ss.model_drawing = True
     draw()
 
     # JS redraws user strokes for some reason, i'll comment it out for now
@@ -82,13 +95,30 @@ def draw_line(x1, y1, x2, y2, color="#000000", width=2):
     })
     ss.object_count += 1
 
+def to_serializable(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: to_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [to_serializable(v) for v in obj]
+    if isinstance(obj, tuple):
+        return [to_serializable(v) for v in obj]
+    return obj
+
+
 # p.draw in JS
 def draw():
     ss.model_strokes_count += 1
 
+    if ss.model_strokes_count > 500:
+        ss.model_drawing = False
+        return
+
     model = ss.model
     prev_pen = ss.prev_pen_state
     ss.model_state = model.update([ss.dx, ss.dy] + prev_pen, ss.model_state)
+
     pdf = model.getPDF(ss.model_state, ss.temperature)
 
     sample = model.sample(pdf)
@@ -99,8 +129,8 @@ def draw():
 
     # if drawing is finished
     if pen_state[PEN_END] == 1:
-        # start a new drawing
-        st.rerun() # updates the strokes on the canvas
+        ss.model_drawing = False
+        return
     else:
         if prev_pen[PEN_DOWN] == 1:
             draw_line(ss.x, ss.y, ss.x + dx, ss.y + dy)
@@ -113,5 +143,7 @@ def draw():
         ss.dy = dy
         ss.prev_pen_state = pen_state
 
-        draw()
+        # Save the move for the plotter. pen_end samples return early above, so it matches the screen.
+        ss.model_strokes.append([dx, dy] + pen_state)
 
+        st.rerun()
