@@ -132,17 +132,23 @@ def on_new_line(raw_lines):
 
     raw_line_simplified = model.simplify_line(raw_line, 2)
 
-    # the end point of previous line is needed
-    prev_line_end_point = (0, 0)
-    if len(ss.all_raw_lines) > 1:
-        prev_line_end_point = ss.all_raw_lines[-2][-1]
+    if len(ss.strokes) == 0:
+        # first line: drop the offset from the canvas origin
+        stroke = model.line_to_stroke(raw_line_simplified, (0, 0))
+        stroke.pop(0)
+    else:
+        # measure from the current pen position (end of the user's OR model's last stroke)
+        # and keep the pen-up jump to the new line's start
+        stroke = model.line_to_stroke(raw_line_simplified, (ss.x, ss.y))
 
-    stroke = model.line_to_stroke(raw_line_simplified, prev_line_end_point)
-    stroke.pop(0)
+    # pen now sits at the end of the user's line
+    ss.x, ss.y = raw_line[-1][0], raw_line[-1][1]
 
-    strokes = ss.strokes + stroke
+    ss.strokes = ss.strokes + stroke
 
-    initRNNStateFromStrokes(strokes)
+    initRNNStateFromStrokes(ss.strokes)
+
+    # ss.strokes = ss.strokes + stroke
 
     # pen up after user stopped drawing
     ss.prev_pen = [0, 1, 0]
@@ -157,5 +163,6 @@ if canvas_result.json_data is not None:
     if len(objects) > ss.object_count:
         on_new_line(objects)
     elif ss.model_drawing:
-        draw()
+        if (ss.prev_pen_state[PEN_DOWN] == 1):
+            draw()
 

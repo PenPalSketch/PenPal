@@ -6,6 +6,7 @@ import json
 import numpy as np
 
 import streamlit as st
+count = 0
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -32,12 +33,15 @@ def load_model():
 # Feeds user's strokes through the RNN so it remembers the drawing
 # Return model state or None if there aren't enough strokes yet 
 def encode_strokes(strokes):
+    global count
     model = ss.model
+    #ss.strokes = ss.strokes + strokes
 
     if len(strokes) <= 5:
         return None
 
     new_state = model.zeroState()
+    
     new_state = model.update([0, 0, 1, 0, 0], new_state)
     new_state = model.updateStrokes(strokes, new_state, len(strokes) - 1)
 
@@ -54,6 +58,7 @@ def encode_strokes(strokes):
 
     ss.dx = s[0]
     ss.dy = s[1]
+    count+=1
 
 
 def initRNNStateFromStrokes(strokes):
@@ -130,6 +135,7 @@ def draw():
         ss.model_drawing = False
         return
 
+    ss.strokes.append([dx, dy, *pen_state])
     # if previous drawing is finished, start a new one
     if pen_state[PEN_END] == 1:
         # initRNNStateFromStrokes(ss.strokes)
@@ -138,7 +144,6 @@ def draw():
         if prev_pen[PEN_DOWN] == 1:
             draw_line(ss.x, ss.y, ss.x + dx, ss.y + dy)
             pass
-        # update
         ss.x += dx
         ss.y += dy
         ss.dx = dx
