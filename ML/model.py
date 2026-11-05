@@ -213,7 +213,7 @@ class SketchRNN:
         ]
 
         return stroke
- 
+
     #* Simplifies line using RDP algorithm
     #*
     #* @param line list of points [[x0, y0], [x1, y1], ...]
