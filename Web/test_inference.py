@@ -2,6 +2,7 @@ import unittest
 
 from starlette.testclient import TestClient
 
+from HW.Plotter.gcode import FLIP_X, FLIP_Y, PAPER_BOUNDS, PEN_DELAY, PEN_UP_CMD
 from HW.Plotter.simulate import simulate
 from ML.sketch_support import lines_to_strokes
 from Web.inference import app, complete_drawing
@@ -57,18 +58,22 @@ class GcodeCompletionTests(unittest.TestCase):
                 self.assertEqual(result["strokes"], expected)
                 self.assertTrue(result["finished"])
                 self.assertEqual(result["warnings"], [])
-                self.assertTrue(result["gcode"].startswith("G21\nG90\nM5\n"))
-                self.assertTrue(result["gcode"].endswith("M5\nG4 P0.15\nG0 X0.00 Y0.00\n"))
+                self.assertTrue(result["gcode"].startswith(f"G21\nG90\nG92 X0 Y0\n{PEN_UP_CMD}\n"))
+                self.assertTrue(result["gcode"].endswith(f"{PEN_UP_CMD}\nG4 P{PEN_DELAY}\n"))
 
                 sim = simulate(result["gcode"].splitlines())
                 drawn = [s for s in sim["steps"] if s.pen_down and s.moves]
                 self.assertEqual(len(drawn), 2)
-                scale = min(297 / width, 210 / height)
-                left, top = (297 - width * scale) / 2, (210 - height * scale) / 2
+                xmin, ymin, xmax, ymax = PAPER_BOUNDS
+                scale = min((xmax - xmin) / width, (ymax - ymin) / height)
+                left = xmin + (xmax - xmin - width * scale) / 2
+                top = ymin + (ymax - ymin - height * scale) / 2
                 for step, (start, end) in zip(drawn, expected):
                     actual = (step.x0, step.y0, step.x1, step.y1)
-                    mapped = (left + start[0] * scale, top + (height - start[1]) * scale,
-                              left + end[0] * scale, top + (height - end[1]) * scale)
+                    mapped = tuple(value for x, y in (start, end) for value in (
+                        left + (width - x if FLIP_X else x) * scale,
+                        top + (height - y if FLIP_Y else y) * scale,
+                    ))
                     for a, b in zip(actual, mapped):
                         self.assertAlmostEqual(a, b, delta=0.0051)
 
@@ -81,7 +86,8 @@ class GcodeCompletionTests(unittest.TestCase):
         result = complete_drawing(SampleModel([[0.1, 0, 1, 0, 0]] * 500), HUMAN, 297, 210)
         self.assertFalse(result["finished"])
         self.assertEqual(len(result["strokes"][0]), 500)
-        self.assertEqual(sum(line.startswith("G1 ") for line in result["gcode"].splitlines()), 499)
+        sim = simulate(result["gcode"].splitlines())
+        self.assertEqual(sum(step.pen_down and step.moves for step in sim["steps"]), 499)
         self.assertEqual(result["warnings"], [])
 
     def test_endpoint_returns_serializable_gcode(self):
