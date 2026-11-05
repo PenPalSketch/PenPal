@@ -5,13 +5,13 @@ Only the ML strokes are converted, never the human's. Everything is in plotter m
 
 # Machine settings. Placeholders until the plotter is calibrated.
 # Positions are mm from the pen's home spot (GRBL's X0 Y0); +X and +Y move away from it.
-PAPER_BOUNDS = (0, 0, 297, 210)  # (xmin, ymin, xmax, ymax) of the paper, A4 landscape for now
+PAPER_BOUNDS = (2, 2, 48, 48)  # (xmin, ymin, xmax, ymax) of the paper, A4 landscape for now
 FLIP_Y = True                    # True if +Y moves toward the top of the page (canvas y points down)
 FLIP_X = False                   # True if +X moves toward the left of the page
-FEED = 1500                      # drawing speed, mm/min
+FEED = 300                      # drawing speed, mm/min
 RAPID_RATE = 3000                # pen-up speed, mm/min; match GRBL $110/$111 (only used for time estimates)
-PEN_UP_CMD = "M5"                # servo commands for a GRBL servo fork; Marlin uses "M280 P0 S<angle>"
-PEN_DOWN_CMD = "M3 S90"          # TODO: calibrate S values on the actual servo
+PEN_DOWN_CMD = "M5"                # servo commands for a GRBL servo fork; Marlin uses "M280 P0 S<angle>"
+PEN_UP_CMD = "M3 S80"          # TODO: calibrate S values on the actual servo
 PEN_DELAY = 0.15                 # seconds to wait for the servo to finish moving
 HOME = (0, 0)
 PORT = None                      # Arduino serial port, e.g. "COM7"; None finds it automatically
@@ -67,7 +67,13 @@ def strokes_to_gcode(
     # G4 P is seconds on GRBL but milliseconds on Marlin.
     dwell = f"G4 P{pen_delay}"
 
-    lines = ["G21", "G90", pen_up_cmd, dwell]   # mm, absolute coordinates, pen up to be safe
+    lines = [
+        "G21",
+        "G90",
+        "G92 X0 Y0",
+        pen_up_cmd,
+        dwell,
+    ]   # mm, absolute coordinates, pen up to be safe
 
     x, y = anchor              # running absolute position (never clipped)
     prev_pen_down = False      # model's pen state; the human just lifted their pen
@@ -75,7 +81,7 @@ def strokes_to_gcode(
     prev_in_bounds = True      # the anchor is where the human drew, so it's on the paper
 
     # Travel from home to where the human stopped
-    lines.append(f"G0 X{x:.2f} Y{y:.2f}")
+    lines.append(f"G1 X{x:.2f} Y{y:.2f} F{feed}") #CAHNGED
 
     for i, stroke in enumerate(strokes):
         if i >= max_steps:
@@ -106,7 +112,7 @@ def strokes_to_gcode(
         if draw:
             lines.append(f"G1 X{cx:.2f} Y{cy:.2f} F{feed}")
         else:
-            lines.append(f"G0 X{cx:.2f} Y{cy:.2f}")
+            lines.append(f"G1 X{cx:.2f} Y{cy:.2f} F{feed}")
 
         if stroke[2 + PEN_END] == 1:
             break
@@ -114,7 +120,15 @@ def strokes_to_gcode(
         # Applies to the NEXT move; a failed sample ([0, 0, 0]) counts as pen up
         prev_pen_down = (stroke[2 + PEN_DOWN] == 1)
 
-    lines += [pen_up_cmd, dwell, f"G0 X{home[0]:.2f} Y{home[1]:.2f}"]
+    lines += [
+        pen_up_cmd,
+        dwell,
+    ]
+
+    # REMOVED lines += [pen_up_cmd, dwell, f"G0 X{home[0]:.2f} Y{home[1]:.2f}"]
+
+# JUST STOP    lines += [pen_up_cmd, dwell]
+
     return lines
 
 
