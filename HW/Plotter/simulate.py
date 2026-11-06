@@ -108,6 +108,17 @@ def simulate(lines, bounds=PAPER_BOUNDS, pen_up_cmd=PEN_UP_CMD, pen_down_cmd=PEN
             waiting_dwell = n
             continue
 
+        # G92 changes the work coordinates without physically moving the pen.
+        # PenPal emits `G92 X0 Y0` at the start of every job so the carriage's
+        # current location becomes that job's home position.
+        if ("G", 92) in codes:
+            if "X" not in params and "Y" not in params:
+                warn(n, "G92 requires at least one X/Y coordinate")
+                continue
+            x = params.get("X", x)
+            y = params.get("Y", y)
+            continue
+
         for code in codes:
             if code in (("G", 0), ("G", 1)):
                 motion = code[1]
@@ -290,6 +301,15 @@ def self_test():
     check("demo draws 3 lines", sum(s.moves and s.pen_down for s in sim["steps"]) == 3)
     check("demo draws 25 mm", close(sim["stats"]["draw_mm"], 25))
     check("demo lowers the pen twice", sim["stats"]["pen_lowers"] == 2)
+
+    # PenPal establishes its manual home with G92 before the first move.
+    origin = simulate(["G21", "G90", "G92 X5 Y-2", "G1 X7 Y1 F300"],
+                      bounds=(-10, -10, 10, 10))
+    move = [s for s in origin["steps"] if s.moves]
+    check("G92 establishes work coordinates without a warning", origin["warnings"] == [])
+    check("move after G92 starts at the established work coordinates",
+          len(move) == 1 and all(map(close, (move[0].x0, move[0].y0, move[0].x1, move[0].y1),
+                                     (5, -2, 7, 1))))
 
     # Mistakes the real machine would hit
     bad = simulate(["G21", "G90", "M3 S90", "G0 X10 Y0", "G1 X400 Y0", "M5", "G4 P0.1",

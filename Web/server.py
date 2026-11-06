@@ -1,0 +1,126 @@
+import asyncio
+import json
+import platform
+
+import cv2
+from websockets.asyncio.server import serve
+from websockets.exceptions import ConnectionClosed
+
+if platform.system() == "Windows":
+    from ctypes import windll
+
+    def is_spacebar_down():
+        return bool(windll.user32.GetAsyncKeyState(0x20) & 0x8000)
+else:
+    from pynput import keyboard as _kb
+
+    _keys_down: set = set()
+
+    def _on_press(key):
+        _keys_down.add(key)
+
+    def _on_release(key):
+        _keys_down.discard(key)
+
+    _kb.Listener(on_press=_on_press, on_release=_on_release, daemon=True).start()
+
+    def is_spacebar_down():
+        return _kb.Key.space in _keys_down
+
+
+def get_pen_center(hsv):
+    mask = cv2.inRange(hsv, (45, 60, 40), (85, 255, 255))
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contour = max(contours, key=cv2.contourArea, default=None)
+    if contour is None or cv2.contourArea(contour) < 50:
+        return None
+
+    x, y, width, height = cv2.boundingRect(contour)
+    return x + width // 2, y + height // 2
+
+
+def is_led_pen_down(hsv, threshold=300):
+    # Red wraps around in HSV — check both ends of the hue range.
+    mask = cv2.bitwise_or(
+        cv2.inRange(hsv, (0, 210, 210), (10, 255, 255)),
+        cv2.inRange(hsv, (170, 220, 220), (180, 255, 255)),
+    )
+    return cv2.countNonZero(mask) > threshold
+
+
+def draw_pen_status(frame, pen_down):
+    status = "PEN DOWN" if pen_down else "PEN UP"
+    color = (0, 200, 0) if pen_down else (0, 0, 255)
+    cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
+
+async def show_camera(websocket):
+    camera = cv2.VideoCapture(0)
+    window = "Camera - Q to quit"
+    drawing = False
+    previous_pen_down = False
+    try:
+        if not camera.isOpened():
+            print("Could not open camera")
+            return
+
+        while websocket.close_code is None:
+            ok, frame = camera.read()
+            if not ok:
+                break
+
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            center = get_pen_center(hsv)
+            if center is not None:
+                cv2.circle(frame, center, 4, (0, 0, 255), -1)
+
+            pen_down = is_spacebar_down() or is_led_pen_down(hsv)
+            if previous_pen_down and not pen_down:
+                await websocket.send(json.dumps({"type": "COMPLETE"}))
+                drawing = False
+            elif pen_down and center is not None:
+                height, width = frame.shape[:2]
+                await websocket.send(json.dumps({
+                    "pen_down": True,
+                    "x": center[0], "y": center[1],
+                    "width": width, "height": height,
+                }))
+                drawing = True
+            elif drawing:
+                await websocket.send(json.dumps({"pen_down": False}))
+                drawing = False
+            previous_pen_down = pen_down
+
+            draw_pen_status(frame, pen_down)
+            cv2.imshow(window, frame)
+            # Drain repeated key presses so window updates don't get held up.
+            while (key := cv2.pollKey()) != -1:
+                if key & 0xFF in (ord("q"), ord("Q")):
+                    return
+
+            # Let the server process connection events between frames.
+            await asyncio.sleep(0.01)
+    except ConnectionClosed:
+        pass
+    finally:
+        camera.release()
+        cv2.destroyAllWindows()
+        print("Camera closed")
+
+
+async def handle_connection(websocket):
+    print("Client connected")
+    await show_camera(websocket)
+
+
+async def main():
+    async with serve(handle_connection, "localhost", 8765) as server:
+        print("Waiting for connections on ws://localhost:8765")
+        await server.serve_forever()
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
