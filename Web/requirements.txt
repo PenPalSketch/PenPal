@@ -1,3 +1,8 @@
 websockets==17.1
 opencv-python==4.14.0.94
 pynput==1.7.7
+tensorflow==2.21.0
+starlette==1.9.0
+uvicorn==0.54.0
+matplotlib==3.11.2
+pyserial==3.5

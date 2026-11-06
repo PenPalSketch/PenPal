@@ -123,11 +123,8 @@ def strokes_to_gcode(
     lines += [
         pen_up_cmd,
         dwell,
+        f"G1 X{home[0]:.2f} Y{home[1]:.2f} F{feed}",
     ]
-
-    # REMOVED lines += [pen_up_cmd, dwell, f"G0 X{home[0]:.2f} Y{home[1]:.2f}"]
-
-# JUST STOP    lines += [pen_up_cmd, dwell]
 
     return lines
 
