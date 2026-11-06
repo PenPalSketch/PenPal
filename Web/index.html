@@ -8,8 +8,10 @@
 <body>
   <button id="connect">Connect</button>
   <button id="clear">Clear</button>
+  <button id="download" disabled>Download G-code</button>
   <p id="status" role="status">Disconnected</p>
   <p id="completion-status" role="status"></p>
+  <p id="gcode-status" role="status"></p>
   <canvas id="canvas" width="640" height="480" style="border: 1px solid #ccc; max-width: 100%;"></canvas>
 
   <script>
@@ -18,8 +20,29 @@
     const canvas = document.getElementById("canvas");
     const context = canvas.getContext("2d");
     const completionStatus = document.getElementById("completion-status");
+    const download = document.getElementById("download");
+    const gcodeStatus = document.getElementById("gcode-status");
     let history = [];
     let completion = Promise.resolve();
+    let drawingVersion = 0;
+    let gcode = "";
+
+    function clearDownload() {
+      gcode = "";
+      download.disabled = true;
+      gcodeStatus.textContent = "";
+    }
+
+    download.onclick = () => {
+      const url = URL.createObjectURL(new Blob([gcode], { type: "text/plain" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "penpal.gcode";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    };
 
     function drawPoint(point, previous, color = "black") {
       const [x, y] = point;
@@ -38,34 +61,46 @@
       }
     }
 
-    async function fetchAndDrawCompletion() {
+    async function fetchAndDrawCompletion(version) {
       const response = await fetch("http://localhost:8000/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ strokes: history }),
+        body: JSON.stringify({ strokes: history, width: canvas.width, height: canvas.height }),
       });
       const result = await response.json();
 
+      if (version !== drawingVersion) return;
       if (!response.ok) throw new Error(result.error);
       for (const path of result.strokes) {
         path.forEach((point, i) => drawPoint(point, path[i - 1], "blue"));
       }
       history.push(...result.strokes);
+      gcode = result.gcode;
+      download.disabled = !gcode;
+      gcodeStatus.textContent = result.warnings.length
+        ? result.warnings.join("\n")
+        : gcode ? "G-code ready for the latest model continuation." : "No new lines to export.";
     }
 
-    document.getElementById("clear").onclick = () => {
+    function clearDrawing() {
+      drawingVersion += 1;
       history = [];
       completionStatus.textContent = "";
+      clearDownload();
       context.clearRect(0, 0, canvas.width, canvas.height);
-    };
+    }
 
-    async function completeDrawing() {
+    document.getElementById("clear").onclick = clearDrawing;
+
+    async function completeDrawing(version) {
+      if (version !== drawingVersion) return;
+      clearDownload();
       completionStatus.textContent = "Completing...";
       try {
-        await fetchAndDrawCompletion();
-        completionStatus.textContent = "";
+        await fetchAndDrawCompletion(version);
+        if (version === drawingVersion) completionStatus.textContent = "";
       } catch (error) {
-        completionStatus.textContent = error.message;
+        if (version === drawingVersion) completionStatus.textContent = error.message;
       }
     }
 
@@ -83,7 +118,8 @@
         const { type, pen_down, x, y, width, height } = JSON.parse(event.data);
         if (type === "COMPLETE") {
           currentStroke = null;
-          completion = completion.then(completeDrawing);
+          const version = drawingVersion;
+          completion = completion.then(() => completeDrawing(version));
           return;
         }
         if (!pen_down) {
@@ -94,7 +130,7 @@
         if (canvas.width !== width || canvas.height !== height) {
           canvas.width = width;
           canvas.height = height;
-          history = [];
+          clearDrawing();
           currentStroke = null;
         }
 

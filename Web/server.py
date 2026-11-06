@@ -55,7 +55,8 @@ def draw_pen_status(frame, pen_down):
 
 
 async def show_camera(websocket):
-    camera = cv2.VideoCapture(0)
+    backend = cv2.CAP_DSHOW if platform.system() == "Windows" else cv2.CAP_ANY
+    camera = cv2.VideoCapture(0, backend)
     window = "Camera - Q to quit"
     drawing = False
     previous_pen_down = False
