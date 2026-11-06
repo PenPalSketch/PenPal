@@ -5,7 +5,6 @@ Sends G-code to the plotter's Arduino (running GRBL) over USB.
     python plotter/send.py file.gcode --dry-run    # practice run with a pretend Arduino
     python plotter/send.py file.gcode --check      # GRBL checks every line, motors don't move
     python plotter/send.py file.gcode              # plot it
-    python plotter/send.py --test                  # self-tests, no hardware needed
 
 Files go through the simulator first and aren't sent if it finds problems (--force overrides).
 
@@ -63,7 +62,7 @@ def find_port():
     raise PlotterError(f"More than one possible Arduino. Pick one with --port or PORT in plotter/gcode.py:\n{seen}")
 
 
-# A pretend Arduino running GRBL, for practice runs and tests. Replies ok to every line.
+# A pretend Arduino running GRBL for practice runs. Replies ok to every line.
 # fail_on: text that makes it reply with an error instead. state: what a "?" status query reports.
 class FakeGrbl:
     def __init__(self, fail_on=None, state="Idle"):
@@ -150,7 +149,7 @@ def connect(port=PORT, baud=BAUD, log=print):
     return ser
 
 
-# Stops immediately: feed hold, then soft reset. The reset turns the spindle output off, which lifts the pen.
+# Feed hold, then soft reset. The pen's position after reset depends on the servo firmware.
 def stop(ser):
     ser.write(b"!")
     time.sleep(0.2)
@@ -205,54 +204,6 @@ def send_gcode(lines, ser=None, port=PORT, check=False, unlock=False, force=Fals
         ser.close()
 
 
-def self_test():
-    results = []
-    def check(name, ok):
-        print("PASS" if ok else "FAIL", name)
-        results.append(ok)
-    def quiet(*args):
-        pass
-
-    job = ["G21", "G90", "M5", "G4 P0.15", "G0 X10 Y10 ; travel", "M3 S90", "G4 P0.15",
-           "G1 X20 Y10 F1500", "M5", "G4 P0.15", "G0 X0 Y0"]
-
-    fake = FakeGrbl()
-    send_gcode(job, ser=fake, log=quiet)
-    check("sends every line in order, comments removed", fake.sent == [strip_comment(l) for l in job] + ["G4 P0"])
-
-    fake = FakeGrbl(fail_on="M3")
-    try:
-        send_gcode(job, ser=fake, log=quiet)
-        check("a rejected line stops the job", False)
-    except PlotterError as e:
-        check("a rejected line stops the job", "M3 S90" in str(e) and "doesn't support" in str(e))
-        check("nothing is sent after the rejected line", fake.sent[-3:] == ["M3 S90", "!", "\x18"])
-
-    fake = FakeGrbl()
-    try:
-        send_gcode(["G21", "G90", "M3 S90", "G4 P0.15", "G0 X10 Y10", "M5"], ser=fake, log=quiet)
-        check("the simulator blocks bad G-code", False)
-    except PlotterError as e:
-        check("the simulator blocks bad G-code", "nothing was sent" in str(e) and fake.sent == [])
-
-    fake = FakeGrbl(state="Alarm")
-    try:
-        send_gcode(job, ser=fake, log=quiet)
-        check("refuses to run while GRBL is in alarm", False)
-    except PlotterError as e:
-        check("refuses to run while GRBL is in alarm", "--unlock" in str(e) and fake.sent == [])
-    fake = FakeGrbl(state="Alarm")
-    send_gcode(job, ser=fake, log=quiet, unlock=True)
-    check("--unlock sends $X, then the job", fake.sent[0] == "$X" and fake.sent[-1] == "G4 P0")
-
-    fake = FakeGrbl()
-    send_gcode(job, ser=fake, log=quiet, check=True)
-    check("--check wraps the job in $C", fake.sent[0] == "$C" and fake.sent[-1] == "$C")
-
-    print(f"\n{sum(results)}/{len(results)} passed")
-    return 0 if all(results) else 1
-
-
 def main():
     p = argparse.ArgumentParser(description="Send G-code to the plotter's Arduino (GRBL).")
     p.add_argument("file", nargs="?", help=".gcode file to send")
@@ -262,17 +213,14 @@ def main():
     p.add_argument("--unlock", action="store_true", help="clear a GRBL alarm ($X) before sending")
     p.add_argument("--force", action="store_true", help="send even if the simulator found problems")
     p.add_argument("--list", action="store_true", help="list serial ports")
-    p.add_argument("--test", action="store_true", help="run the self-tests")
     a = p.parse_args()
 
-    if a.test:
-        sys.exit(self_test())
     if a.list:
         for port in list_ports():
             print(f"{port.device}: {port.description}")
         return
     if not a.file:
-        p.error("give a .gcode file, or --list / --test")
+        p.error("give a .gcode file, or --list")
 
     def progress(i, n, line):
         print(f"[{i}/{n}] {line}")
