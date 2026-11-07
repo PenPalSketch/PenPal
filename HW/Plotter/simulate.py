@@ -323,7 +323,7 @@ def self_test():
 
     # Canvas pixels -> paper mm, 700x400 canvas onto A4 landscape
     a4 = (0, 0, 297, 210)
-    m = CanvasToPaper(700, 400, bounds=a4, flip_y=True)
+    m = CanvasToPaper(700, 400, bounds=a4, flip_x=False, flip_y=True)
     y0 = (210 - 400 * 297 / 700) / 2
     check("canvas fills the paper's width", close(m.scale, 297 / 700))
     check("canvas bottom-left -> paper bottom-left", all(map(close, m.point(0, 400), (0, y0))))

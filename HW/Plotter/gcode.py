@@ -7,8 +7,9 @@ Only the ML strokes are converted, never the human's. Everything is in plotter m
 # Machine settings. Placeholders until the plotter is calibrated.
 # Positions are mm from the pen's home spot (GRBL's X0 Y0); +X and +Y move away from it.
 PAPER_BOUNDS = (2, 2, 48, 48)    # (xmin, ymin, xmax, ymax) of the drawing area in mm
-FLIP_Y = True                    # True if +Y moves toward the top of the page (canvas y points down)
-FLIP_X = False                   # True if +X moves toward the left of the page
+# The person draws from the side across from the X rail, so both are flipped (drawing turned 180 degrees)
+FLIP_Y = False                   # True if +Y moves toward the top of the page (canvas y points down)
+FLIP_X = True                    # True if +X moves toward the left of the page
 FEED = 300                       # drawing speed, mm/min
 TRAVEL_FEED = 300                # pen-up speed, mm/min. Sent as G1 so travel can't go fast enough to skip steps
 RAPID_RATE = 3000                # GRBL's $110/$111, only used by the simulator to time G0 moves
