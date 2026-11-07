@@ -2,16 +2,18 @@
 Turns the model's generated strokes into G-code for the CNC plotter.
 Only the ML strokes are converted, never the human's. Everything is in plotter mm.
 """
+# Welcome to my very awesome gcode guys, first time using this so there might be bugs :')
 
 # Machine settings. Placeholders until the plotter is calibrated.
 # Positions are mm from the pen's home spot (GRBL's X0 Y0); +X and +Y move away from it.
-PAPER_BOUNDS = (2, 2, 48, 48)  # (xmin, ymin, xmax, ymax) of the paper, A4 landscape for now
+PAPER_BOUNDS = (2, 2, 48, 48)    # (xmin, ymin, xmax, ymax) of the drawing area in mm
 FLIP_Y = True                    # True if +Y moves toward the top of the page (canvas y points down)
 FLIP_X = False                   # True if +X moves toward the left of the page
-FEED = 300                      # drawing speed, mm/min
-RAPID_RATE = 3000                # pen-up speed, mm/min; match GRBL $110/$111 (only used for time estimates)
-PEN_DOWN_CMD = "M5"                # servo commands for a GRBL servo fork; Marlin uses "M280 P0 S<angle>"
-PEN_UP_CMD = "M3 S80"          # TODO: calibrate S values on the actual servo
+FEED = 300                       # drawing speed, mm/min
+TRAVEL_FEED = 300                # pen-up speed, mm/min. Sent as G1 so travel can't go fast enough to skip steps
+RAPID_RATE = 3000                # GRBL's $110/$111, only used by the simulator to time G0 moves
+PEN_DOWN_CMD = "M5"              # our servo is down when the spindle is off, so a reset or stop drops the pen
+PEN_UP_CMD = "M3 S80"            # TODO: calibrate S values on the actual servo
 PEN_DELAY = 0.15                 # seconds to wait for the servo to finish moving
 HOME = (0, 0)
 PORT = None                      # Arduino serial port, e.g. "COM7"; None finds it automatically
@@ -46,7 +48,7 @@ class CanvasToPaper:
         sy = -self.scale if self.flip_y else self.scale
         return [[s[0] * sx, s[1] * sy] + list(s[2:]) for s in strokes]
 
-
+# comments because cs136 HAD TO FRICNE HAD COMMENTS
 # strokes:  [[dx, dy, penDown, penUp, penEnd], ...] from model.sample(), in mm (see CanvasToPaper)
 # anchor:   (x, y) mm, end of the human's last pen-down line. The first delta is measured from here.
 # bounds:   (xmin, ymin, xmax, ymax) mm, the drawable area of the paper
@@ -56,6 +58,7 @@ def strokes_to_gcode(
     anchor,
     bounds=PAPER_BOUNDS,
     feed=FEED,                  # drawing speed, mm/min
+    travel_feed=TRAVEL_FEED,    # pen-up speed, mm/min
     pen_up_cmd=PEN_UP_CMD,
     pen_down_cmd=PEN_DOWN_CMD,
     pen_delay=PEN_DELAY,        # seconds to wait for the servo to finish moving
@@ -65,12 +68,14 @@ def strokes_to_gcode(
     # The servo moves on its own and the firmware doesn't wait for it,
     # so pause after every pen command or the pen drags/skips at stroke starts.
     # G4 P is seconds on GRBL but milliseconds on Marlin.
+    # what is GRBL you may ask? basically it turn arduino into CNC for cheap
+
     dwell = f"G4 P{pen_delay}"
 
     lines = [
         "G21",
         "G90",
-        "G92 X0 Y0",
+        "G92 X0 Y0",  # wherever the pen is now becomes home, so start with it at the home corner
         pen_up_cmd,
         dwell,
     ]   # mm, absolute coordinates, pen up to be safe
@@ -81,7 +86,7 @@ def strokes_to_gcode(
     prev_in_bounds = True      # the anchor is where the human drew, so it's on the paper
 
     # Travel from home to where the human stopped
-    lines.append(f"G1 X{x:.2f} Y{y:.2f} F{feed}") #CAHNGED
+    lines.append(f"G1 X{x:.2f} Y{y:.2f} F{travel_feed}")
 
     for i, stroke in enumerate(strokes):
         if i >= max_steps:
@@ -112,7 +117,7 @@ def strokes_to_gcode(
         if draw:
             lines.append(f"G1 X{cx:.2f} Y{cy:.2f} F{feed}")
         else:
-            lines.append(f"G1 X{cx:.2f} Y{cy:.2f} F{feed}")
+            lines.append(f"G1 X{cx:.2f} Y{cy:.2f} F{travel_feed}")
 
         if stroke[2 + PEN_END] == 1:
             break
@@ -123,7 +128,7 @@ def strokes_to_gcode(
     lines += [
         pen_up_cmd,
         dwell,
-        f"G1 X{home[0]:.2f} Y{home[1]:.2f} F{feed}",
+        f"G1 X{home[0]:.2f} Y{home[1]:.2f} F{travel_feed}",
     ]
 
     return lines

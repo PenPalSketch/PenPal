@@ -3,7 +3,7 @@ Makes test G-code files in HW/Plotter/output from drawings where we know what th
 
     python HW/Plotter/make_samples.py
 
-sample_ruler.gcode        a 50 mm square, a 40 mm circle and a 100 mm ruler, drawn directly in mm.
+sample_ruler.gcode        a 20 mm square, a 20 mm circle and a 40 mm ruler, drawn directly in mm.
                           Measure them on the paper to check the plotter's steps per mm.
 sample_cat_face.gcode     a hand-made cat face on the 700x400 canvas, sent through the same
                           pixel -> mm conversion as the app. Checks the conversion and the flip.
@@ -44,12 +44,13 @@ def polylines_to_gcode(lines, to_paper=None):
     return strokes_to_gcode(strokes, anchor, max_steps=len(strokes))
 
 
+# Sized to fit the 46 mm drawing area, so it also fits anything bigger
 def ruler():
-    x0, y0 = PAPER_BOUNDS[0] + 20, PAPER_BOUNDS[1] + 20
-    square = [[x0, y0], [x0 + 50, y0], [x0 + 50, y0 + 50], [x0, y0 + 50], [x0, y0]]
-    ring = circle(x0 + 100, y0 + 25, 20, 72)
-    rule = [[x0, y0 + 80], [x0 + 100, y0 + 80]]
-    ticks = [[[x0 + 10 * i, y0 + 80], [x0 + 10 * i, y0 + 80 + (8 if i % 5 == 0 else 4)]] for i in range(11)]
+    x0, y0 = PAPER_BOUNDS[0] + 2, PAPER_BOUNDS[1] + 2
+    square = [[x0, y0], [x0 + 20, y0], [x0 + 20, y0 + 20], [x0, y0 + 20], [x0, y0]]
+    ring = circle(x0 + 32, y0 + 10, 10, 72)
+    rule = [[x0, y0 + 30], [x0 + 40, y0 + 30]]
+    ticks = [[[x0 + 5 * i, y0 + 30], [x0 + 5 * i, y0 + 30 + (6 if i % 2 == 0 else 3)]] for i in range(9)]
     return polylines_to_gcode([square, ring, rule] + ticks)
 
 

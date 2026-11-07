@@ -59,7 +59,7 @@ def find_port():
     seen = "\n".join(f"  {p.device}: {p.description}" for p in ports) or "  (none)"
     if not arduinos:
         raise PlotterError(f"No Arduino found. Is it plugged in? Ports seen:\n{seen}")
-    raise PlotterError(f"More than one possible Arduino. Pick one with --port or PORT in plotter/gcode.py:\n{seen}")
+    raise PlotterError(f"More than one possible Arduino. Pick one with --port or PORT in HW/Plotter/gcode.py:\n{seen}")
 
 
 # A pretend Arduino running GRBL for practice runs. Replies ok to every line.
