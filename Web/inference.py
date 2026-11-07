@@ -1,6 +1,7 @@
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from threading import Lock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -14,6 +15,23 @@ from starlette.routing import Route
 
 from HW.Plotter.gcode import CanvasToPaper, strokes_to_gcode
 from HW.Plotter.simulate import simulate
+from HW.Plotter.send import PlotterError, send_gcode
+
+
+plot_lock = Lock()
+
+# this has to be offloaded into a separate thread because sending it
+# must hold an entire thread until drawing is complete.
+def plot_gcode(lines):
+    if not plot_lock.acquire(blocking=False):
+        return JSONResponse({"error": "The plotter is busy."}, status_code=409)
+    try:
+        send_gcode(lines)
+        return JSONResponse({"status": "complete"})
+    except (PlotterError, OSError) as error:
+        return JSONResponse({"error": str(error)}, status_code=503)
+    finally:
+        plot_lock.release()
 
 
 def complete_drawing(model, strokes, width, height, temperature=0.25, max_steps=500):
@@ -102,8 +120,17 @@ async def complete(request):
     return JSONResponse(result)
 
 
+async def plot(request):
+    body = await request.json()
+    return await run_in_threadpool(plot_gcode, body["gcode"].splitlines())
+
+
 app = Starlette(
-    routes=[Route("/", homepage), Route("/complete", complete, methods=["POST"])],
+    routes=[
+        Route("/", homepage),
+        Route("/complete", complete, methods=["POST"]),
+        Route("/plot", plot, methods=["POST"]),
+    ],
     lifespan=lifespan,
     middleware=[Middleware(
         CORSMiddleware,

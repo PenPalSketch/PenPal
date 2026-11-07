@@ -12,6 +12,7 @@
   <p id="status" role="status">Disconnected</p>
   <p id="completion-status" role="status"></p>
   <p id="gcode-status" role="status"></p>
+  <p id="plot-status" role="status"></p>
   <canvas id="canvas" width="640" height="480" style="border: 1px solid #ccc; max-width: 100%;"></canvas>
 
   <script>
@@ -22,10 +23,12 @@
     const completionStatus = document.getElementById("completion-status");
     const download = document.getElementById("download");
     const gcodeStatus = document.getElementById("gcode-status");
+    const plotStatus = document.getElementById("plot-status");
     let history = [];
     let completion = Promise.resolve();
     let drawingVersion = 0;
     let gcode = "";
+    let plottingPaused = false;
 
     function clearDownload() {
       gcode = "";
@@ -80,6 +83,25 @@
       gcodeStatus.textContent = result.warnings.length
         ? result.warnings.join("\n")
         : gcode ? "G-code ready for the latest model continuation." : "No new lines to export.";
+      completionStatus.textContent = "";
+      if (gcode && !result.warnings.length && !plottingPaused) await plotGcode(gcode);
+    }
+
+    async function plotGcode(code) {
+      plotStatus.textContent = "Plotting… Clear only clears the canvas; it does not stop the plotter.";
+      try {
+        const response = await fetch("http://localhost:8000/plot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ gcode: code }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        plotStatus.textContent = "Plot complete.";
+      } catch (error) {
+        plottingPaused = true;
+        plotStatus.textContent = `Automatic plotting paused: ${error.message}. The job may be partially drawn. Wait for the plotter to stop, restore its home position, then reload the page to resume.`;
+      }
     }
 
     function clearDrawing() {
