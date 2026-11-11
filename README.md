@@ -41,16 +41,16 @@ The script has no CLI options. Edit `NUM_TURNS` and `TEMPERATURE` at the top of
 TensorFlow and Pillow dependencies.
 
 ## Plotter
-Machine settings (paper position, pen up/down commands, serial port) are at the top of `Plotter/gcode.py`.
+Machine settings (paper position, pen up/down commands, serial port) are at the top of `HW/Plotter/gcode.py`.
 
 In the app, a plotter preview appears under the canvas once the model stops drawing, with buttons to download the G-code or send it to the plotter.
 
 ```
-python Plotter/make_samples.py                                          # test drawings in plotter/output
-python Plotter/simulate.py plotter/output/sample_ruler.gcode --animate  # watch it draw, no hardware
-python Plotter/send.py plotter/output/sample_ruler.gcode --dry-run      # practice send, no hardware
-python Plotter/send.py plotter/output/sample_ruler.gcode --check        # Arduino checks every line, no movement
-python Plotter/send.py plotter/output/sample_ruler.gcode                # plot it
+python HW/Plotter/make_samples.py                                             # test drawings in HW/Plotter/output
+python HW/Plotter/simulate.py HW/Plotter/output/sample_ruler.gcode --animate  # watch it draw, no hardware
+python HW/Plotter/send.py HW/Plotter/output/sample_ruler.gcode --dry-run      # practice send, no hardware
+python HW/Plotter/send.py HW/Plotter/output/sample_ruler.gcode --check        # Arduino checks every line, no movement
+python HW/Plotter/send.py HW/Plotter/output/sample_ruler.gcode                # plot it
 ```
 
 The Arduino runs GRBL with servo support. It treats wherever the pen is when a program connects as X0 Y0, so put the pen at the home corner before sending. Every job ends back there.

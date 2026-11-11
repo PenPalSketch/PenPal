@@ -1,10 +1,10 @@
 """
 Sends G-code to the plotter's Arduino (running GRBL) over USB.
 
-    python plotter/send.py --list                  # show serial ports
-    python plotter/send.py file.gcode --dry-run    # practice run with a pretend Arduino
-    python plotter/send.py file.gcode --check      # GRBL checks every line, motors don't move
-    python plotter/send.py file.gcode              # plot it
+    python HW/Plotter/send.py --list                  # show serial ports
+    python HW/Plotter/send.py file.gcode --dry-run    # practice run with a pretend Arduino
+    python HW/Plotter/send.py file.gcode --check      # GRBL checks every line, motors don't move
+    python HW/Plotter/send.py file.gcode              # plot it
 
 Files go through the simulator first and aren't sent if it finds problems (--force overrides).
 
@@ -59,7 +59,7 @@ def find_port():
     seen = "\n".join(f"  {p.device}: {p.description}" for p in ports) or "  (none)"
     if not arduinos:
         raise PlotterError(f"No Arduino found. Is it plugged in? Ports seen:\n{seen}")
-    raise PlotterError(f"More than one possible Arduino. Pick one with --port or PORT in plotter/gcode.py:\n{seen}")
+    raise PlotterError(f"More than one possible Arduino. Pick one with --port or PORT in HW/Plotter/gcode.py:\n{seen}")
 
 
 # A pretend Arduino running GRBL for practice runs. Replies ok to every line.
