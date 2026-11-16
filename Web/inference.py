@@ -16,6 +16,8 @@ from starlette.routing import Route
 from HW.Plotter.gcode import CanvasToPaper, strokes_to_gcode
 from HW.Plotter.simulate import simulate
 from HW.Plotter.send import PlotterError, send_gcode
+from ML.sketch_support import line_to_stroke
+from Web.placement import fit_to_drawing
 
 
 plot_lock = Lock()
@@ -34,7 +36,8 @@ def plot_gcode(lines):
         plot_lock.release()
 
 
-def complete_drawing(model, strokes, width, height, temperature=0.25, max_steps=500):
+def complete_drawing(model, strokes, width, height, temperature=0.25, max_steps=500,
+                     human_strokes=None):
     if any(type(size) is not int or size <= 0 for size in (width, height)):
         raise ValueError("Send positive integer canvas width and height values.")
     paths = model.simplify_lines(strokes, 1.5)
@@ -47,10 +50,8 @@ def complete_drawing(model, strokes, width, height, temperature=0.25, max_steps=
     state = model.update(model.zero_input(), model.zeroState())
     state = model.updateStrokes(seed, state, len(seed))
     x, y = paths[-1][-1]
-    anchor = (x, y)
     pen_down = bool(seed[-1][2])
     generated = []
-    moves = []
     path = None
     finished = False
 
@@ -60,7 +61,6 @@ def complete_drawing(model, strokes, width, height, temperature=0.25, max_steps=
             finished = True
             break
 
-        moves.append([float(sample[0]), float(sample[1]), *map(int, sample[2:])])
         next_x, next_y = x + float(sample[0]), y + float(sample[1])
         # The previous pen state determines whether this movement draws a line.
         if pen_down:
@@ -78,6 +78,16 @@ def complete_drawing(model, strokes, width, height, temperature=0.25, max_steps=
     gcode = ""
     warnings = []
     if generated:
+        drawing = paths if human_strokes is None else human_strokes
+        generated = fit_to_drawing(generated, drawing, width, height)
+        # Build the machine moves from the exact polylines returned to the browser.
+        # Each new path begins with pen-up travel, preserving gaps between strokes.
+        anchor = generated[0][0]
+        previous = anchor
+        moves = []
+        for path in generated:
+            moves.extend(line_to_stroke(path, previous))
+            previous = path[-1]
         to_paper = CanvasToPaper(width, height)
         lines = strokes_to_gcode(
             to_paper.strokes(moves), to_paper.point(*anchor), max_steps=len(moves),
@@ -114,6 +124,7 @@ async def complete(request):
             complete_drawing, request.app.state.model,
             body["strokes"], body.get("width"), body.get("height"),
             body.get("temperature", 0.25),
+            human_strokes=body.get("human_strokes"),
         )
     except ValueError as error:
         return JSONResponse({"error": str(error)}, status_code=400)

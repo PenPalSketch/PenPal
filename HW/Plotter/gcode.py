@@ -4,20 +4,27 @@ Only the ML strokes are converted, never the human's. Everything is in plotter m
 """
 # Welcome to my very awesome gcode guys, first time using this so there might be bugs :')
 
-# Machine settings. Placeholders until the plotter is calibrated.
+# Machine settings. The drawing area is 14 inches wide by 12 inches high.
 # Positions are mm from the pen's home spot (GRBL's X0 Y0); +X and +Y move away from it.
-PAPER_BOUNDS = (2, 2, 48, 48)    # (xmin, ymin, xmax, ymax) of the drawing area in mm
-# The person draws from the side across from the X rail, so both are flipped (drawing turned 180 degrees)
+GCODE_OFFSET_X = 0
+GCODE_OFFSET_Y = 0
+# Translate the drawing area so pixel mapping and G-code validation use the same offsets.
+PAPER_BOUNDS = (GCODE_OFFSET_X, GCODE_OFFSET_Y,
+                14 * 25.4 + GCODE_OFFSET_X, 12 * 25.4 + GCODE_OFFSET_Y)
+CANVAS_WIDTH = 700
+CANVAS_HEIGHT = round(CANVAS_WIDTH * (PAPER_BOUNDS[3] - PAPER_BOUNDS[1])
+                      / (PAPER_BOUNDS[2] - PAPER_BOUNDS[0]))
+# Match the physical axes to the board as viewed in the camera.
 FLIP_Y = False                   # True if +Y moves toward the top of the page (canvas y points down)
-FLIP_X = True                    # True if +X moves toward the left of the page
-FEED = 300                       # drawing speed, mm/min
-TRAVEL_FEED = 300                # pen-up speed, mm/min. Sent as G1 so travel can't go fast enough to skip steps
-RAPID_RATE = 3000                # GRBL's $110/$111, only used by the simulator to time G0 moves
+FLIP_X = False                    # True if +X moves toward the left of the page
+FEED = 6000                       # drawing speed, mm/min
+TRAVEL_FEED = 6000                # pen-up speed, mm/min. Sent as G1 so travel can't go fast enough to skip steps
+RAPID_RATE = 6000                # GRBL's $110/$111, only used by the simulator to time G0 moves
 PEN_DOWN_CMD = "M5"              # our servo is down when the spindle is off, so a reset or stop drops the pen
 PEN_UP_CMD = "M3 S80"            # TODO: calibrate S values on the actual servo
 PEN_DELAY = 0.15                 # seconds to wait for the servo to finish moving
 HOME = (0, 0)
-PORT = None                      # Arduino serial port, e.g. "COM7"; None finds it automatically
+PORT = "/dev/cu.usbmodem11301"     # Arduino Uno serial port; None enables automatic detection
 BAUD = 115200                    # GRBL default
 
 # Pen index constants (same layout as the model's stroke-5 vectors)

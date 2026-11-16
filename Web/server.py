@@ -1,10 +1,17 @@
 import asyncio
 import json
 import platform
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cv2
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
+
+from CV.board import BoardCalibration
+from HW.Plotter.gcode import CANVAS_WIDTH, CANVAS_HEIGHT
 
 if platform.system() == "Windows":
     from ctypes import windll
@@ -60,11 +67,22 @@ async def show_camera(websocket):
     window = "Camera - Q to quit"
     drawing = False
     previous_pen_down = False
+    stroke_recorded = False
+    calibration = BoardCalibration(CANVAS_WIDTH, CANVAS_HEIGHT)
+    calibrated = False
+
+    def select_corner(event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            calibration.add_corner(x, y)
+
     try:
         if not camera.isOpened():
             print("Could not open camera")
             return
 
+        cv2.namedWindow(window)
+        cv2.setMouseCallback(window, select_corner)
+        await websocket.send(json.dumps({"type": "CALIBRATING"}))
         while websocket.close_code is None:
             ok, frame = camera.read()
             if not ok:
@@ -75,29 +93,41 @@ async def show_camera(websocket):
             if center is not None:
                 cv2.circle(frame, center, 4, (0, 0, 255), -1)
 
-            pen_down = is_spacebar_down() or is_led_pen_down(hsv)
-            if previous_pen_down and not pen_down:
+            if calibration.transform is not None and not calibrated:
+                calibrated = True
+                await websocket.send(json.dumps({
+                    "type": "READY", "width": CANVAS_WIDTH, "height": CANVAS_HEIGHT,
+                }))
+            point = calibration.point(center)
+            pen_down = calibrated and (is_spacebar_down() or is_led_pen_down(hsv))
+            if previous_pen_down and not pen_down and stroke_recorded:
                 await websocket.send(json.dumps({"type": "COMPLETE"}))
                 drawing = False
-            elif pen_down and center is not None:
-                height, width = frame.shape[:2]
+                stroke_recorded = False
+            elif pen_down and point is not None:
                 await websocket.send(json.dumps({
                     "pen_down": True,
-                    "x": center[0], "y": center[1],
-                    "width": width, "height": height,
+                    "x": point[0], "y": point[1],
+                    "width": CANVAS_WIDTH, "height": CANVAS_HEIGHT,
                 }))
                 drawing = True
+                stroke_recorded = True
             elif drawing:
                 await websocket.send(json.dumps({"pen_down": False}))
                 drawing = False
             previous_pen_down = pen_down
 
             draw_pen_status(frame, pen_down)
+            calibration.draw(frame)
             cv2.imshow(window, frame)
             # Drain repeated key presses so window updates don't get held up.
             while (key := cv2.pollKey()) != -1:
                 if key & 0xFF in (ord("q"), ord("Q")):
                     return
+                if key & 0xFF in (ord("c"), ord("C")):
+                    calibration.reset()
+                    calibrated = drawing = previous_pen_down = stroke_recorded = False
+                    await websocket.send(json.dumps({"type": "CALIBRATING"}))
 
             # Let the server process connection events between frames.
             await asyncio.sleep(0.01)

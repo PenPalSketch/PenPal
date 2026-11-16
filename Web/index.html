@@ -13,7 +13,9 @@
   <p id="completion-status" role="status"></p>
   <p id="gcode-status" role="status"></p>
   <p id="plot-status" role="status"></p>
-  <canvas id="canvas" width="640" height="480" style="border: 1px solid #ccc; max-width: 100%;"></canvas>
+  <p>Drawing area — 14 × 12 inches. After connecting, click the board's top-left, top-right,
+    bottom-right, and bottom-left corners in the camera preview. Press C there to recalibrate.</p>
+  <canvas id="canvas" width="700" height="600" style="border: 1px solid #ccc; max-width: 100%; height: auto;"></canvas>
 
   <script>
     const button = document.getElementById("connect");
@@ -25,6 +27,7 @@
     const gcodeStatus = document.getElementById("gcode-status");
     const plotStatus = document.getElementById("plot-status");
     let history = [];
+    let humanStrokes = [];
     let completion = Promise.resolve();
     let drawingVersion = 0;
     let gcode = "";
@@ -68,7 +71,8 @@
       const response = await fetch("http://localhost:8000/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ strokes: history, width: canvas.width, height: canvas.height }),
+        body: JSON.stringify({ strokes: history, human_strokes: humanStrokes,
+          width: canvas.width, height: canvas.height }),
       });
       const result = await response.json();
 
@@ -107,6 +111,7 @@
     function clearDrawing() {
       drawingVersion += 1;
       history = [];
+      humanStrokes = [];
       completionStatus.textContent = "";
       clearDownload();
       context.clearRect(0, 0, canvas.width, canvas.height);
@@ -138,6 +143,20 @@
 
       socket.onmessage = (event) => {
         const { type, pen_down, x, y, width, height } = JSON.parse(event.data);
+        if (type === "CALIBRATING") {
+          clearDrawing();
+          currentStroke = null;
+          status.textContent = "Click the four board corners in the camera preview.";
+          return;
+        }
+        if (type === "READY") {
+          canvas.width = width;
+          canvas.height = height;
+          clearDrawing();
+          currentStroke = null;
+          status.textContent = "Connected — board calibrated";
+          return;
+        }
         if (type === "COMPLETE") {
           currentStroke = null;
           const version = drawingVersion;
@@ -159,6 +178,7 @@
         if (!currentStroke || history[history.length - 1] !== currentStroke) {
           currentStroke = [];
           history.push(currentStroke);
+          humanStrokes.push(currentStroke);
         }
         drawPoint([x, y], currentStroke[currentStroke.length - 1]);
         currentStroke.push([x, y]);

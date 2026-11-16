@@ -9,12 +9,9 @@ if str(ROOT) not in sys.path:
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 from interactive_predict import draw, initRNNStateFromStrokes, load_model
-from HW.Plotter.gcode import CanvasToPaper, strokes_to_gcode, write_gcode
+from HW.Plotter.gcode import CANVAS_WIDTH, CANVAS_HEIGHT, CanvasToPaper, strokes_to_gcode, write_gcode
 from HW.Plotter.send import FakeGrbl, PlotterError, send_gcode
 from HW.Plotter.simulate import render, simulate, summary
-
-CANVAS_WIDTH = 700
-CANVAS_HEIGHT = 400
 
 # State (equivalent to the "let" variables from JS)
 ss = st.session_state
