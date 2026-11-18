@@ -30,9 +30,6 @@ def load_model():
 def encode_strokes(strokes):
     model = ss.model
 
-    if len(strokes) <= 5:
-        return None
-
     new_state = model.zeroState()
     new_state = model.update(model.zero_input(), new_state)
     new_state = model.updateStrokes(strokes, new_state, len(strokes) - 1)
@@ -51,8 +48,8 @@ def encode_strokes(strokes):
     ss.dy = s[1]
 
 
-def initRNNStateFromStrokes(strokes):
-    if len(strokes) <= 5:
+def initRNNStateFromStrokes(strokes, min_strokes=6):
+    if len(strokes) < min_strokes:
         ss.model_drawing = False
         ss.model_strokes = []
         return
@@ -66,12 +63,6 @@ def initRNNStateFromStrokes(strokes):
     ss.model_strokes = []
 
     ss.model_drawing = True
-    draw()
-
-    # JS redraws user strokes for some reason, i'll comment it out for now
-    # Draw them.
-    # draw_strokes(strokes, startX, startY);
-
 
 
 def draw_line(x1, y1, x2, y2, color="#000000", width=2):
@@ -108,7 +99,7 @@ def to_serializable(obj):
 
 
 # p.draw in JS
-def draw():
+def draw(update_canvas=True):
     ss.model_strokes_count += 1
 
     if ss.model_strokes_count > 500:
@@ -123,8 +114,9 @@ def draw():
 
     sample = model.sample(pdf)
 
-    dx = int(sample[0])
-    dy = int(sample[1])
+    dx, dy = sample[:2]
+    if update_canvas:
+        dx, dy = int(dx), int(dy)
     pen_state = sample[2:]
 
     # if drawing is finished
@@ -132,9 +124,8 @@ def draw():
         ss.model_drawing = False
         return
     else:
-        if prev_pen[PEN_DOWN] == 1:
+        if update_canvas and prev_pen[PEN_DOWN] == 1:
             draw_line(ss.x, ss.y, ss.x + dx, ss.y + dy)
-            pass
 
         # update cursor
         ss.x += dx
@@ -145,5 +136,3 @@ def draw():
 
         # Save the move for the plotter. pen_end samples return early above, so it matches the screen.
         ss.model_strokes.append([dx, dy] + pen_state)
-
-        st.rerun()
