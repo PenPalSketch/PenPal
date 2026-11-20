@@ -65,7 +65,6 @@ def restart():
     ss.model_strokes = []
     ss.pop("camera_size", None)
     ss.pop("camera_strokes", None)
-    ss.pop("current_camera_stroke", None)
     ss.pop("camera_pending", None)
 
 
@@ -73,7 +72,6 @@ def disconnect_camera():
     socket = ss.pop("camera_socket", None)
     if socket is not None:
         socket.close()
-    ss.pop("current_camera_stroke", None)
 
 
 def change_source():
@@ -112,6 +110,8 @@ with col2:
         max_value=1.0,
         step=0.05,
         key="temperature")
+
+dry_run = st.checkbox("Practice run (pretend Arduino)", key="plot_dry_run")
 
 # load model once when streamlit program starts:
 if "model" not in ss:
@@ -177,46 +177,30 @@ def on_new_line(raw_lines):
 
 @st.fragment(run_every=0.2)
 def poll_camera():
-    socket = ss.camera_socket
-    size_changed = False
-    for _ in range(256):
-        try:
-            message = json.loads(socket.recv(timeout=0))
-        except TimeoutError:
-            break
-        except ConnectionClosed:
-            disconnect_camera()
-            st.rerun()
-
-        if message.get("type") == "COMPLETE":
-            ss.pop("current_camera_stroke", None)
-            if ss.get("camera_strokes"):
-                ss.camera_pending = True
-                break
-            continue
-
-        if not message.get("pen_down"):
-            ss.pop("current_camera_stroke", None)
-            continue
-
-        size = (message["width"], message["height"])
-        if size != ss.get("camera_size"):
-            restart()
-            ss.camera_size = size
-            size_changed = True
-
-        if "current_camera_stroke" not in ss:
-            ss.current_camera_stroke = []
-            ss.setdefault("camera_strokes", []).append(ss.current_camera_stroke)
-        ss.current_camera_stroke.append([message["x"], message["y"]])
-
-    if size_changed or ss.get("camera_pending"):
+    try:
+        message = json.loads(ss.camera_socket.recv(timeout=0))
+    except TimeoutError:
+        st.caption("Camera connected. Move your hand out of frame after drawing a blue line.")
+        return
+    except ConnectionClosed:
+        disconnect_camera()
         st.rerun()
 
-    st.caption("Camera connected. Lift the pen to generate a continuation.")
+    if message.get("type") != "LINE":
+        return
+
+    size = (message["width"], message["height"])
+    if size != ss.get("camera_size"):
+        restart()
+        ss.camera_size = size
+
+    ss.setdefault("camera_strokes", []).append(message["path"])
+    ss.camera_pending = True
+    st.rerun()
 
 
 width, height = CANVAS_WIDTH, CANVAS_HEIGHT
+plot_pending = False
 if source == "Camera":
     if ss.pop("camera_pending", False):
         ss.model_strokes = []
@@ -234,11 +218,12 @@ if source == "Camera":
                 for previous, move in zip(ss.model_strokes, ss.model_strokes[1:])
             ):
                 ss.model_strokes = []
-
-    if "camera_socket" in ss:
-        poll_camera()
-    if ss.all_raw_lines and not ss.model_strokes:
-        st.info("No model lines to export. Draw another stroke.")
+        plot_pending = bool(ss.model_strokes)
+    if ss.get("camera_strokes") and not ss.model_strokes:
+        if ss.all_raw_lines:
+            st.info("The model produced no drawable continuation. Try drawing another line.")
+        else:
+            st.info("The camera detected ink but could not trace a line. Try a longer line.")
     width, height = ss.get("camera_size", (CANVAS_WIDTH, CANVAS_HEIGHT))
 else:
     canvas_result = st_canvas(
@@ -263,6 +248,7 @@ else:
             draw()
             if ss.model_drawing:
                 st.rerun()
+            plot_pending = bool(ss.model_strokes)
 
 
 # Plotter preview for the model's latest completed turn.
@@ -283,15 +269,18 @@ if ss.model_strokes:
     for w in sim["warnings"]:
         st.warning(w)
 
-    dl_col = st.columns(2)
-    dry_run = st.checkbox("Practice run (pretend Arduino)", key="plot_dry_run")
-    bar = st.progress(0.0, "Connecting to the plotter...")
+    if plot_pending:
+        bar = st.progress(0.0, "Connecting to the plotter...")
 
-    def show_progress(i, n, line):
-        bar.progress(i / n, f"Plotting: line {i} of {n}")
+        def show_progress(i, n, line):
+            bar.progress(i / n, f"Plotting: line {i} of {n}")
 
-    try:
-        send_gcode(gcode, ser=FakeGrbl() if dry_run else None, on_progress=show_progress)
-        st.success("Practice run done." if dry_run else "Done. The pen should be back at the home corner.")
-    except PlotterError as e:
-        st.error(str(e))
+        try:
+            send_gcode(gcode, ser=FakeGrbl() if dry_run else None, on_progress=show_progress)
+            st.success("Practice run done." if dry_run else "Done. The pen should be back at the home corner.")
+        except PlotterError as e:
+            st.error(str(e))
+
+
+if source == "Camera" and "camera_socket" in ss:
+    poll_camera()

@@ -34,7 +34,7 @@ ERRORS = {
     "22": "G1 was sent before any feed rate (F)",
 }
 
-PORT = "/dev/cu.usbmodem11101"
+PORT = "/dev/cu.usbmodem11301"
 class PlotterError(Exception):
     pass
 

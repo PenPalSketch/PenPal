@@ -5,10 +5,10 @@ Only the ML strokes are converted, never the human's. Everything is in plotter m
 
 # Machine settings. Placeholders until the plotter is calibrated.
 # Positions are mm from the pen's home spot (GRBL's X0 Y0); +X and +Y move away from it.
-PAPER_BOUNDS = (2, 2, 48, 48)  # (xmin, ymin, xmax, ymax) of the paper, A4 landscape for now
-FLIP_Y = True                    # True if +Y moves toward the top of the page (canvas y points down)
+PAPER_BOUNDS = (5, 5, 370, 300)  # (xmin, ymin, xmax, ymax) of the paper, A4 landscape for now
+FLIP_Y = False                    # True if +Y moves toward the top of the page (canvas y points down)
 FLIP_X = False                   # True if +X moves toward the left of the page
-FEED = 300                      # drawing speed, mm/min
+FEED = 6000                      # drawing speed, mm/min
 RAPID_RATE = 3000                # pen-up speed, mm/min; match GRBL $110/$111 (only used for time estimates)
 PEN_DOWN_CMD = "M5"                # servo commands for a GRBL servo fork; Marlin uses "M280 P0 S<angle>"
 PEN_UP_CMD = "M3 S80"          # TODO: calibrate S values on the actual servo

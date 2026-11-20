@@ -12,48 +12,6 @@ from websockets.exceptions import ConnectionClosed
 
 from util import largest_contour
 
-if platform.system() == "Windows":
-    from ctypes import windll
-
-    def is_spacebar_down():
-        return bool(windll.user32.GetAsyncKeyState(0x20) & 0x8000)
-else:
-    from pynput import keyboard as _kb
-
-    _keys_down: set = set()
-
-    def _on_press(key):
-        _keys_down.add(key)
-
-    def _on_release(key):
-        _keys_down.discard(key)
-
-    _kb.Listener(on_press=_on_press, on_release=_on_release, daemon=True).start()
-
-    def is_spacebar_down():
-        return _kb.Key.space in _keys_down
-
-
-def get_pen_center(hsv):
-    mask = cv2.inRange(hsv, (45, 60, 40), (85, 255, 255))
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contour = max(contours, key=cv2.contourArea, default=None)
-    if contour is None or cv2.contourArea(contour) < 50:
-        return None
-
-    x, y, width, height = cv2.boundingRect(contour)
-    return x + width // 2, y + height // 2
-
-
-def is_led_pen_down(hsv, threshold=300):
-    # Red wraps around in HSV — check both ends of the hue range.
-    mask = cv2.bitwise_or(
-        cv2.inRange(hsv, (0, 210, 210), (10, 255, 255)),
-        cv2.inRange(hsv, (170, 220, 220), (180, 255, 255)),
-    )
-    return cv2.countNonZero(mask) > threshold
-
-
 def find_canvas_corners(hsv, min_area_fraction=0.1):
     # The canvas shows up gray on camera, so tell it from the brown wood by saturation,
     # not brightness: canvas saturation is ~10-20, the wood ~190-230.
@@ -236,10 +194,11 @@ def trace_path(mask, start, spacing=20):
     ys, xs = np.nonzero(distance >= 0)
     # The middle of each band of equal distance follows the center of the line.
     bands = distance[ys, xs] // spacing
-    return [
+    path = [
         (int(xs[bands == band].mean()), int(ys[bands == band].mean()))
         for band in np.unique(bands)
     ]
+    return path if len(path) > 1 else [start, farthest_pixel(distance)]
 
 
 class Line:
@@ -444,12 +403,6 @@ def draw_lines(frame, line_detector):
     cv2.putText(frame, label, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, DRAWING_STATE_COLORS[state], 2)
 
 
-def draw_pen_status(frame, pen_down):
-    status = "PEN DOWN" if pen_down else "PEN UP"
-    color = (0, 200, 0) if pen_down else (0, 0, 255)
-    cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-
-
 def should_quit():
     # Drain repeated key presses so window updates don't get held up.
     while (key := cv2.pollKey()) != -1:
@@ -462,8 +415,6 @@ async def show_camera(websocket):
     backend = cv2.CAP_DSHOW if platform.system() == "Windows" else cv2.CAP_ANY
     camera = cv2.VideoCapture(0, backend)
     window = "Camera - Q to quit"
-    drawing = False
-    previous_pen_down = False
     arm_tracker = ArmDirectionTracker()
     line_detector = LineDetector()
     calibrator = CanvasCalibrator()
@@ -494,10 +445,6 @@ async def show_camera(websocket):
             # Everything below works on a top-down view of just the canvas.
             frame = cv2.warpPerspective(frame, canvas_transform, canvas_size)
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            center = get_pen_center(hsv)
-            if center is not None:
-                cv2.circle(frame, center, 4, (0, 0, 255), -1)
-
             arm_contour, arm_tip = get_arm(hsv)
             arm_direction, arm_motion = arm_tracker.update(arm_tip)
             new_line = line_detector.update(hsv, arm_contour, arm_tip)
@@ -505,24 +452,14 @@ async def show_camera(websocket):
                 print(f"New line #{len(line_detector.lines)}: {cv2.countNonZero(new_line.mask)} px, "
                       f"start {new_line.path[0]} ({new_line.start_source})")
 
-            pen_down = is_spacebar_down() or is_led_pen_down(hsv)
-            if previous_pen_down and not pen_down:
-                await websocket.send(json.dumps({"type": "COMPLETE"}))
-                drawing = False
-            elif pen_down and center is not None:
-                height, width = frame.shape[:2]
+                width, height = canvas_size
                 await websocket.send(json.dumps({
-                    "pen_down": True,
-                    "x": center[0], "y": center[1],
-                    "width": width, "height": height,
+                    "type": "LINE",
+                    "path": new_line.path,
+                    "width": width,
+                    "height": height,
                 }))
-                drawing = True
-            elif drawing:
-                await websocket.send(json.dumps({"pen_down": False}))
-                drawing = False
-            previous_pen_down = pen_down
 
-            draw_pen_status(frame, pen_down)
             draw_arm(frame, arm_contour, arm_tip, arm_direction, arm_motion)
             draw_lines(frame, line_detector)
             cv2.imshow(window, frame)
