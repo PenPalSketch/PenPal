@@ -5,10 +5,10 @@ Reads the G-code roughly the way GRBL would, flags anything that would go wrong 
 machine, estimates how long the drawing takes, and draws or animates the result.
 The plot shows the page the way the person drawing sees it.
 
-    python plotter/simulate.py file.gcode              # show the drawing
-    python plotter/simulate.py file.gcode --animate    # watch it draw
-    python plotter/simulate.py file.gcode --out a.png  # save a picture (.gif saves the animation)
-    python plotter/simulate.py --test                  # run the self-tests
+    python HW/Plotter/simulate.py file.gcode              # show the drawing
+    python HW/Plotter/simulate.py file.gcode --animate    # watch it draw
+    python HW/Plotter/simulate.py file.gcode --out a.png  # save a picture (.gif saves the animation)
+    python HW/Plotter/simulate.py --test                  # run the self-tests
 """
 import argparse
 import bisect
@@ -323,7 +323,7 @@ def self_test():
 
     # Canvas pixels -> paper mm, 700x400 canvas onto A4 landscape
     a4 = (0, 0, 297, 210)
-    m = CanvasToPaper(700, 400, bounds=a4, flip_y=True)
+    m = CanvasToPaper(700, 400, bounds=a4, flip_x=False, flip_y=True)
     y0 = (210 - 400 * 297 / 700) / 2
     check("canvas fills the paper's width", close(m.scale, 297 / 700))
     check("canvas bottom-left -> paper bottom-left", all(map(close, m.point(0, 400), (0, y0))))
