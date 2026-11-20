@@ -15,6 +15,8 @@ pip install -r HW/requirements.txt
 
 streamlit run ML/UI/canvas.py
 
+Select **Draw in Streamlit** for mouse input, or follow the [camera setup](CV/README.md) to connect the camera directly from Streamlit.
+
 ## Twenty-turn model self-play demo
 
 From the repository root, run:

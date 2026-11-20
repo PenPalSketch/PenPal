@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-import random
+import json
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -8,6 +8,8 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
+from websockets.exceptions import ConnectionClosed, WebSocketException
+from websockets.sync.client import connect
 from interactive_predict import draw, initRNNStateFromStrokes, load_model
 from HW.Plotter.gcode import CanvasToPaper, strokes_to_gcode, write_gcode
 from HW.Plotter.send import FakeGrbl, PlotterError, send_gcode
@@ -15,6 +17,7 @@ from HW.Plotter.simulate import render, simulate, summary
 
 CANVAS_WIDTH = 700
 CANVAS_HEIGHT = 400
+CAMERA_URL = "ws://127.0.0.1:8765"
 
 # State (equivalent to the "let" variables from JS)
 ss = st.session_state
@@ -60,15 +63,45 @@ def restart():
     ss.model_drawing = False
     ss.model_strokes_count = 0
     ss.model_strokes = []
+    ss.pop("camera_size", None)
+    ss.pop("camera_strokes", None)
+    ss.pop("camera_pending", None)
+
+
+def disconnect_camera():
+    socket = ss.pop("camera_socket", None)
+    if socket is not None:
+        socket.close()
+
+
+def change_source():
+    disconnect_camera()
+    restart()
+
+
+def connect_camera():
+    try:
+        ss.camera_socket = connect(CAMERA_URL, open_timeout=1, close_timeout=1)
+    except (OSError, TimeoutError, WebSocketException):
+        st.error("Could not connect. Start the camera server with python CV/server.py.")
+
 
 # Layout (UI and DOM elements)
 st.title("Pen Pal Canvas")
 st.subheader("Interactive Sketch Prediction")
-st.write("This demo attempts to finish the drawing of a cat, given whatever strokes you draw on the screen.")
+source = st.radio("Drawing input", ("Camera", "Draw in Streamlit"),
+                  horizontal=True, on_change=change_source)
 
 col1, col2 = st.columns(2, vertical_alignment="bottom")
 
 with col1:
+    if source == "Camera":
+        if "camera_socket" in ss:
+            st.button("Disconnect camera", on_click=disconnect_camera)
+        elif st.button("Connect camera"):
+            connect_camera()
+            if "camera_socket" in ss:
+                st.rerun()
     st.button("Clear", on_click=restart, use_container_width=True)
 with col2:
     st.slider(
@@ -78,20 +111,7 @@ with col2:
         step=0.05,
         key="temperature")
 
-canvas_result = st_canvas(
-    initial_drawing={"version": "4.4.0", "objects": ss.generated_lines + ss.user_lines},
-    drawing_mode="freedraw",
-    fill_color="rgba(255, 165, 0, 0.3)",  
-    stroke_width=2,
-    stroke_color="#FF0000", # JS says that the user always draws in red
-    background_color="#EEEEEE",
-    update_streamlit=True,
-    width=CANVAS_WIDTH,
-    height=CANVAS_HEIGHT,
-    return_image_data=True,
-    key=f"canvas{ss.canvas_key}",
-)
-
+dry_run = st.checkbox("Practice run (pretend Arduino)", key="plot_dry_run")
 
 # load model once when streamlit program starts:
 if "model" not in ss:
@@ -155,22 +175,86 @@ def on_new_line(raw_lines):
     initRNNStateFromStrokes(ss.strokes)
 
 
-# this is called whenever a new stroke was drawn
-if canvas_result.json_data is not None:
-    objects = canvas_result.json_data.get("objects", [])
+@st.fragment(run_every=0.2)
+def poll_camera():
+    try:
+        message = json.loads(ss.camera_socket.recv(timeout=0))
+    except TimeoutError:
+        st.caption("Camera connected. Move your hand out of frame after drawing a blue line.")
+        return
+    except ConnectionClosed:
+        disconnect_camera()
+        st.rerun()
 
-    # more strokes than previous drawing
-    if len(objects) > ss.object_count:
-        on_new_line(objects)
-    elif ss.model_drawing:
-        draw()
+    if message.get("type") != "LINE":
+        return
+
+    size = (message["width"], message["height"])
+    if size != ss.get("camera_size"):
+        restart()
+        ss.camera_size = size
+
+    ss.setdefault("camera_strokes", []).append(message["path"])
+    ss.camera_pending = True
+    st.rerun()
 
 
-# Plotter preview: what the plotter would draw for the model's latest turn.
-# Only reached while the model is idle, because draw() reruns the script after every step.
+width, height = CANVAS_WIDTH, CANVAS_HEIGHT
+plot_pending = False
+if source == "Camera":
+    if ss.pop("camera_pending", False):
+        ss.model_strokes = []
+        paths = ss.model.simplify_lines(ss.camera_strokes, 1.5)
+        ss.all_raw_lines = [
+            path for path in paths if len(path) >= 2 and any(point != path[0] for point in path)
+        ]
+        if ss.all_raw_lines:
+            ss.strokes = ss.model.lines_to_stroke(ss.all_raw_lines)[:-1]
+            initRNNStateFromStrokes(ss.strokes, min_strokes=1)
+            while ss.model_drawing:
+                draw(update_canvas=False)
+            if not any(
+                previous[2] == 1 and (move[0] or move[1])
+                for previous, move in zip(ss.model_strokes, ss.model_strokes[1:])
+            ):
+                ss.model_strokes = []
+        plot_pending = bool(ss.model_strokes)
+    if ss.get("camera_strokes") and not ss.model_strokes:
+        if ss.all_raw_lines:
+            st.info("The model produced no drawable continuation. Try drawing another line.")
+        else:
+            st.info("The camera detected ink but could not trace a line. Try a longer line.")
+    width, height = ss.get("camera_size", (CANVAS_WIDTH, CANVAS_HEIGHT))
+else:
+    canvas_result = st_canvas(
+        initial_drawing={"version": "4.4.0", "objects": ss.generated_lines + ss.user_lines},
+        drawing_mode="freedraw",
+        fill_color="rgba(255, 165, 0, 0.3)",
+        stroke_width=2,
+        stroke_color="#FF0000", # JS says that the user always draws in red
+        background_color="#EEEEEE",
+        update_streamlit=True,
+        width=CANVAS_WIDTH,
+        height=CANVAS_HEIGHT,
+        return_image_data=True,
+        key=f"canvas{ss.canvas_key}",
+    )
+
+    if canvas_result.json_data is not None:
+        objects = canvas_result.json_data.get("objects", [])
+        if len(objects) > ss.object_count:
+            on_new_line(objects)
+        if ss.model_drawing:
+            draw()
+            if ss.model_drawing:
+                st.rerun()
+            plot_pending = bool(ss.model_strokes)
+
+
+# Plotter preview for the model's latest completed turn.
 if ss.model_strokes:
     st.subheader("Plotter preview")
-    to_paper = CanvasToPaper(CANVAS_WIDTH, CANVAS_HEIGHT)
+    to_paper = CanvasToPaper(width, height)
     gcode = strokes_to_gcode(to_paper.strokes(ss.model_strokes), to_paper.point(*ss.model_anchor),
                              max_steps=len(ss.model_strokes))
     sim = simulate(gcode)
@@ -185,10 +269,7 @@ if ss.model_strokes:
     for w in sim["warnings"]:
         st.warning(w)
 
-    dl_col, send_col = st.columns(2)
-    dl_col.download_button("Download G-code", "\n".join(gcode) + "\n", file_name="penpal.gcode")
-    dry_run = st.checkbox("Practice run (pretend Arduino)", key="plot_dry_run")
-    if send_col.button("Send to plotter", key="send_plotter", disabled=bool(sim["warnings"])):
+    if plot_pending:
         bar = st.progress(0.0, "Connecting to the plotter...")
 
         def show_progress(i, n, line):
@@ -199,3 +280,7 @@ if ss.model_strokes:
             st.success("Practice run done." if dry_run else "Done. The pen should be back at the home corner.")
         except PlotterError as e:
             st.error(str(e))
+
+
+if source == "Camera" and "camera_socket" in ss:
+    poll_camera()

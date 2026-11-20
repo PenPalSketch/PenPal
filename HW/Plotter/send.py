@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from Plotter.gcode import BAUD, PORT
+from Plotter.gcode import BAUD
 from Plotter.simulate import simulate, strip_comment, summary
 
 # Common GRBL error codes, to explain a rejected line
@@ -34,7 +34,7 @@ ERRORS = {
     "22": "G1 was sent before any feed rate (F)",
 }
 
-
+PORT = "/dev/cu.usbmodem11301"
 class PlotterError(Exception):
     pass
 
@@ -52,14 +52,10 @@ def _looks_like_arduino(port):
 
 def find_port():
     ports = list_ports()
-    arduinos = [p for p in ports if _looks_like_arduino(p)]
+    arduinos = [p for p in ports if p == PORT]
+    print(arduinos)
     if len(arduinos) == 1:
         return arduinos[0].device
-
-    seen = "\n".join(f"  {p.device}: {p.description}" for p in ports) or "  (none)"
-    if not arduinos:
-        raise PlotterError(f"No Arduino found. Is it plugged in? Ports seen:\n{seen}")
-    raise PlotterError(f"More than one possible Arduino. Pick one with --port or PORT in HW/Plotter/gcode.py:\n{seen}")
 
 
 # A pretend Arduino running GRBL for practice runs. Replies ok to every line.
