@@ -1,9 +1,5 @@
 import sys
 from pathlib import Path
-import random
-import math
-import json
-import numpy as np
 
 import streamlit as st
 
@@ -13,10 +9,9 @@ if str(ROOT) not in sys.path:
 
 from ML.model import SketchRNN
 
-# Pen index constants
-PEN_DOWN, PEN_UP, PEN_END = 0, 1, 2
-
 ss = st.session_state
+MODEL_STROKES_PER_TURN = 3
+MAX_MODEL_STEPS = 500
 
 # same as js's initModel()
 def load_model():
@@ -25,44 +20,51 @@ def load_model():
     model.setPixelFactor(5.0)   # bigger -> larger drawings
     return model
 
-# Feeds user's strokes through the RNN so it remembers the drawing
-# Return model state or None if there aren't enough strokes yet 
-def encode_strokes(strokes):
+def predict_turn(update_canvas=True):
+    """Generate a reply and add its drawn moves to the shared sketch."""
     model = ss.model
-
-    new_state = model.zeroState()
-    new_state = model.update(model.zero_input(), new_state)
-    new_state = model.updateStrokes(strokes, new_state, len(strokes) - 1)
-
-    ss.model_state = model.copyState(new_state)
-
-    # set x and y
-    last_point = ss.all_raw_lines[-1][-1]
-
-    ss.x = last_point[0]
-    ss.y = last_point[1]
-
-    s = strokes[-1]
-
-    ss.dx = s[0]
-    ss.dy = s[1]
-
-
-def initRNNStateFromStrokes(strokes, min_strokes=6):
-    if len(strokes) < min_strokes:
-        ss.model_drawing = False
-        ss.model_strokes = []
-        return
-
-    encode_strokes(strokes)
-
-    # New model turn: the human just lifted their pen, and the plotter starts where they stopped
-    ss.prev_pen_state = [0, 1, 0]
-    ss.model_strokes_count = 0
+    state = model.update(model.zero_input(), model.zeroState())
+    state = model.updateStrokes(ss.strokes, state, len(ss.strokes) - 1)
+    previous = ss.strokes[-1]
     ss.model_anchor = (ss.x, ss.y)
-    ss.model_strokes = []
 
-    ss.model_drawing = True
+    moves = []
+    last_drawn_move = 0
+    completed_strokes = 0
+    drew_current_stroke = False
+    x, y = ss.model_anchor
+    for _ in range(MAX_MODEL_STEPS):
+        state = model.update(previous, state)
+        dx, dy, pen_down, pen_up, pen_end = model.sample(model.getPDF(state, ss.temperature))
+        if pen_end:
+            break
+        if update_canvas:
+            dx, dy = int(dx), int(dy)
+
+        _, _, previous_pen_down, _, _ = previous
+        previous = [dx, dy, pen_down, pen_up, pen_end]
+        moves.append(previous)
+        if previous_pen_down and (dx or dy):
+            if update_canvas:
+                draw_line(x, y, x + dx, y + dy)
+            last_drawn_move = len(moves)
+            drew_current_stroke = True
+        x += dx
+        y += dy
+
+        if pen_up and drew_current_stroke:
+            completed_strokes += 1
+            drew_current_stroke = False
+            if completed_strokes == MODEL_STROKES_PER_TURN:
+                break
+
+    # Keep travel leading into visible ink. End at the last visible point with the pen up.
+    ss.model_strokes = moves[:last_drawn_move]
+    if ss.model_strokes:
+        ss.model_strokes[-1][2:] = [0, 1, 0]
+        ss.strokes.extend(ss.model_strokes)
+        ss.x = ss.model_anchor[0] + sum(move[0] for move in ss.model_strokes)
+        ss.y = ss.model_anchor[1] + sum(move[1] for move in ss.model_strokes)
 
 
 def draw_line(x1, y1, x2, y2, color="#000000", width=2):
@@ -85,54 +87,3 @@ def draw_line(x1, y1, x2, y2, color="#000000", width=2):
         "strokeLineCap": "round",
     })
     ss.object_count += 1
-
-def to_serializable(obj):
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, dict):
-        return {k: to_serializable(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [to_serializable(v) for v in obj]
-    if isinstance(obj, tuple):
-        return [to_serializable(v) for v in obj]
-    return obj
-
-
-# p.draw in JS
-def draw(update_canvas=True):
-    ss.model_strokes_count += 1
-
-    if ss.model_strokes_count > 500:
-        ss.model_drawing = False
-        return
-
-    model = ss.model
-    prev_pen = ss.prev_pen_state
-    ss.model_state = model.update([ss.dx, ss.dy] + prev_pen, ss.model_state)
-
-    pdf = model.getPDF(ss.model_state, ss.temperature)
-
-    sample = model.sample(pdf)
-
-    dx, dy = sample[:2]
-    if update_canvas:
-        dx, dy = int(dx), int(dy)
-    pen_state = sample[2:]
-
-    # if drawing is finished
-    if pen_state[PEN_END] == 1:
-        ss.model_drawing = False
-        return
-    else:
-        if update_canvas and prev_pen[PEN_DOWN] == 1:
-            draw_line(ss.x, ss.y, ss.x + dx, ss.y + dy)
-
-        # update cursor
-        ss.x += dx
-        ss.y += dy
-        ss.dx = dx
-        ss.dy = dy
-        ss.prev_pen_state = pen_state
-
-        # Save the move for the plotter. pen_end samples return early above, so it matches the screen.
-        ss.model_strokes.append([dx, dy] + pen_state)
