@@ -6,7 +6,7 @@ Only the ML strokes are converted, never the human's. Everything is in plotter m
 
 # Machine settings. Placeholders until the plotter is calibrated.
 # Positions are mm from the pen's home spot (GRBL's X0 Y0); +X and +Y move away from it.
-PAPER_BOUNDS = (5, 5, 370, 300)  # (xmin, ymin, xmax, ymax) of the paper, A4 landscape for now
+PAPER_BOUNDS = (0, 0, 370, 290)  # (xmin, ymin, xmax, ymax) of the paper, A4 landscape for now
 FLIP_Y = False                    # True if +Y moves toward the top of the page (canvas y points down)
 FLIP_X = False                   # True if +X moves toward the left of the page
 FEED = 6000                      # drawing speed, mm/min
@@ -18,6 +18,8 @@ HOME = (0, 0)
 PORT = None                      # Arduino serial port, e.g. "COM7"; None finds it automatically
 BAUD = 115200                    # GRBL default
 
+TRAVEL_FEED = 6000
+CORNER_DOT_DWELL = 0.5           # seconds held down; marker-tip width sets the dot diameter
 # Pen index constants (same layout as the model's stroke-5 vectors)
 PEN_DOWN, PEN_UP, PEN_END = 0, 1, 2
 
@@ -136,6 +138,31 @@ def strokes_to_gcode(
 def write_gcode(lines, path):
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")
+
+
+def corner_dots_gcode(
+    bounds=PAPER_BOUNDS,
+    dot_dwell=CORNER_DOT_DWELL,
+    travel_feed=TRAVEL_FEED,
+    pen_up_cmd=PEN_UP_CMD,
+    pen_down_cmd=PEN_DOWN_CMD,
+    pen_delay=PEN_DELAY,
+    home=HOME,
+):
+    """Return G-code that presses one marker-tip dot at each exact paper bound."""
+    xmin, ymin, xmax, ymax = bounds
+    corners = [(xmin, ymin), (xmax, ymin), (xmax, ymax), (xmin, ymax)]
+    lines = ["G21", "G90", "G92 X0 Y0", pen_up_cmd, f"G4 P{pen_delay}"]
+    for x, y in corners:
+        lines.extend([
+            f"G1 X{x:.2f} Y{y:.2f} F{travel_feed}",
+            pen_down_cmd,
+            f"G4 P{dot_dwell}",
+            pen_up_cmd,
+            f"G4 P{pen_delay}",
+        ])
+    lines.append(f"G1 X{home[0]:.2f} Y{home[1]:.2f} F{travel_feed}")
+    return lines
 
 
 def main():

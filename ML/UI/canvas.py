@@ -11,7 +11,8 @@ from streamlit_drawable_canvas import st_canvas
 from websockets.exceptions import ConnectionClosed, WebSocketException
 from websockets.sync.client import connect
 from interactive_predict import draw, initRNNStateFromStrokes, load_model
-from HW.Plotter.gcode import CanvasToPaper, strokes_to_gcode, write_gcode
+from HW.Plotter.gcode import (PAPER_BOUNDS, CanvasToPaper, corner_dots_gcode,
+                              strokes_to_gcode, write_gcode)
 from HW.Plotter.send import FakeGrbl, PlotterError, send_gcode
 from HW.Plotter.simulate import render, simulate, summary
 
@@ -112,6 +113,46 @@ with col2:
         key="temperature")
 
 dry_run = st.checkbox("Practice run (pretend Arduino)", key="plot_dry_run")
+
+with st.expander("Plotter calibration"):
+    st.caption(
+        f"Draw one marker-tip dot at each paper bound: "
+        f"({PAPER_BOUNDS[0]}, {PAPER_BOUNDS[1]}), "
+        f"({PAPER_BOUNDS[2]}, {PAPER_BOUNDS[1]}), "
+        f"({PAPER_BOUNDS[2]}, {PAPER_BOUNDS[3]}), and "
+        f"({PAPER_BOUNDS[0]}, {PAPER_BOUNDS[3]})."
+    )
+    if st.button("Draw corner dots", use_container_width=True):
+        dot_gcode = corner_dots_gcode()
+        dot_output = ROOT / "HW" / "Plotter" / "output" / "corner_dots.gcode"
+        dot_output.parent.mkdir(parents=True, exist_ok=True)
+        write_gcode(dot_gcode, dot_output)
+        dot_sim = simulate(dot_gcode)
+        st.caption(
+            "Four stationary 0.5-second marker-tip presses; "
+            f"saved to {dot_output.relative_to(ROOT)}"
+        )
+        if dot_sim["warnings"]:
+            for warning in dot_sim["warnings"]:
+                st.warning(warning)
+        else:
+            dot_progress = st.progress(0.0, "Connecting to the plotter...")
+
+            def show_dot_progress(i, n, line):
+                dot_progress.progress(i / n, f"Drawing corner dots: line {i} of {n}")
+
+            try:
+                send_gcode(
+                    dot_gcode,
+                    ser=FakeGrbl() if dry_run else None,
+                    on_progress=show_dot_progress,
+                )
+                st.success(
+                    "Corner-dot practice run done."
+                    if dry_run else "Corner dots drawn. The pen should be back at home."
+                )
+            except PlotterError as error:
+                st.error(str(error))
 
 # load model once when streamlit program starts:
 if "model" not in ss:

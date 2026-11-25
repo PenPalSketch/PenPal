@@ -2,82 +2,160 @@ import asyncio
 import json
 import math
 import platform
+import sys
 import time
 from collections import deque
+from itertools import combinations
+from pathlib import Path
 
 import cv2
 import numpy as np
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
-from util import largest_contour
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-def find_canvas_corners(hsv, min_area_fraction=0.1):
-    # The canvas shows up gray on camera, so tell it from the brown wood by saturation,
-    # not brightness: canvas saturation is ~10-20, the wood ~190-230.
-    white = cv2.inRange(hsv, (0, 0, 90), (180, 80, 255))
-    kernel = np.ones((9, 9), np.uint8)
-    white = cv2.morphologyEx(white, cv2.MORPH_OPEN, kernel)
-    white = cv2.morphologyEx(white, cv2.MORPH_CLOSE, kernel)
-    contour = largest_contour(white)
-    height, width = hsv.shape[:2]
-    if contour is None or cv2.contourArea(contour) < min_area_fraction * width * height:
-        return None
+from HW.Plotter.gcode import PAPER_BOUNDS
 
-    hull = cv2.convexHull(contour)
-    corners = cv2.approxPolyDP(hull, 0.02 * cv2.arcLength(hull, True), True).reshape(-1, 2)
-    if len(corners) != 4:
-        corners = cv2.boxPoints(cv2.minAreaRect(contour))
-    return order_corners(corners.astype(np.float32))
+try:
+    from .util import largest_contour
+except ImportError:  # Allows `python CV/server.py` as well as importing CV.server in tests.
+    from util import largest_contour
+
+
+# The camera imports the plotter's bounds so both coordinate systems stay aligned.
+PIXELS_PER_MM = 2
+
+# The camera makes the upper dots look almost black/navy under uneven lighting,
+# so accept dark and moderately saturated blues as well as bright marker blue.
+BLUE_LOWER = (85, 35, 8)
+BLUE_UPPER = (140, 255, 255)
 
 
 def order_corners(corners):
-    # Top-left has the smallest x + y, bottom-right the largest;
-    # top-right has the smallest y - x, bottom-left the largest.
-    sums = corners.sum(axis=1)
-    diffs = np.diff(corners, axis=1).ravel()
-    return np.array([
-        corners[np.argmin(sums)], corners[np.argmin(diffs)],
-        corners[np.argmax(sums)], corners[np.argmax(diffs)],
-    ], dtype=np.float32)
+    """Order four image points as top-left, top-right, bottom-right, bottom-left."""
+    center = corners.mean(axis=0)
+    angles = np.arctan2(corners[:, 1] - center[1], corners[:, 0] - center[0])
+    ordered = corners[np.argsort(angles)]
+    return np.roll(ordered, -np.argmin(ordered.sum(axis=1)), axis=0).astype(np.float32)
+
+
+def find_blue_dot_candidates(frame, min_area=3, max_area_fraction=0.002,
+                             min_circularity=0.2):
+    """Return plausible blue corner dots as (centre, area, circularity)."""
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, BLUE_LOWER, BLUE_UPPER)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    frame_area = frame.shape[0] * frame.shape[1]
+    candidates = []
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if not min_area <= area <= max_area_fraction * frame_area:
+            continue
+        perimeter = cv2.arcLength(contour, True)
+        if perimeter == 0:
+            continue
+        circularity = 4 * math.pi * area / (perimeter * perimeter)
+        _, _, width, height = cv2.boundingRect(contour)
+        aspect = width / height
+        if circularity < min_circularity or not 0.3 <= aspect <= 3.5:
+            continue
+        moments = cv2.moments(contour)
+        center = np.array([
+            moments["m10"] / moments["m00"], moments["m01"] / moments["m00"]
+        ], dtype=np.float32)
+        candidates.append((center, area, circularity))
+    return candidates
+
+
+def find_canvas_corners(frame, min_board_area_fraction=0.05):
+    """Find four small blue corner dots, ordered TL, TR, BR, BL.
+
+    The drawing may also be blue, so candidates must be small and approximately
+    round. If other small blue marks exist, the similarly sized group forming
+    the largest valid quadrilateral is used.
+    """
+    frame_area = frame.shape[0] * frame.shape[1]
+    candidates = find_blue_dot_candidates(frame)
+
+    if len(candidates) < 4:
+        return None
+
+    best = None
+    best_score = -1
+    # Limiting the count prevents pathological artwork with many tiny dots from
+    # causing an expensive combinations search. Roundest candidates are safest.
+    candidates = sorted(candidates, key=lambda item: item[2], reverse=True)[:16]
+    for group in combinations(candidates, 4):
+        areas = [item[1] for item in group]
+        if max(areas) / min(areas) > 5.0:
+            continue
+        corners = order_corners(np.array([item[0] for item in group]))
+        if not cv2.isContourConvex(corners.astype(np.int32)):
+            continue
+        board_area = cv2.contourArea(corners)
+        if board_area < min_board_area_fraction * frame_area:
+            continue
+        score = board_area * min(item[2] for item in group)
+        if score > best_score:
+            best, best_score = corners, score
+    return best
 
 
 class CanvasCalibrator:
-    def __init__(self, duration_seconds=1.5):
+    def __init__(self, duration_seconds=2.0, minimum_samples=5):
         self.duration_seconds = duration_seconds
+        self.minimum_samples = minimum_samples
         self.start = None
-        self.samples = []
+        self.samples = deque(maxlen=15)
+        self.corners = None
 
-    def update(self, hsv):
-        """Return the canvas corners once enough frames have been seen, otherwise None."""
+    def update(self, frame):
+        """Calibrate for a short period, then return the same frozen corners."""
+        # Once locked, never inspect later blue ink as possible corner dots.
+        if self.corners is not None:
+            return self.corners
+
         if self.start is None:
             self.start = time.monotonic()
-        corners = find_canvas_corners(hsv)
-        if corners is not None:
-            self.samples.append(corners)
-        # Keep looking past the deadline until the canvas has been seen at least once.
-        if time.monotonic() - self.start < self.duration_seconds or not self.samples:
+        corners = find_canvas_corners(frame)
+        if corners is None:
             return None
-        return np.median(self.samples, axis=0).astype(np.float32)
+        self.samples.append(corners)
+
+        # Multiple frames suppress small sub-pixel detection jitter. Keep looking
+        # past the deadline until every dot has been seen often enough.
+        if (time.monotonic() - self.start < self.duration_seconds
+                or len(self.samples) < self.minimum_samples):
+            return None
+        self.corners = np.median(self.samples, axis=0).astype(np.float32)
+        return self.corners
 
 
-def get_canvas_transform(corners):
-    top_left, top_right, bottom_right, bottom_left = corners
-    width = int(max(np.linalg.norm(top_right - top_left), np.linalg.norm(bottom_right - bottom_left)))
-    height = int(max(np.linalg.norm(bottom_left - top_left), np.linalg.norm(bottom_right - top_right)))
-    target = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32)
+def get_canvas_transform(corners, bounds=PAPER_BOUNDS, pixels_per_mm=PIXELS_PER_MM):
+    xmin, ymin, xmax, ymax = bounds
+    width = round((xmax - xmin) * pixels_per_mm)
+    height = round((ymax - ymin) * pixels_per_mm)
+    target = np.array([
+        [0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]
+    ], dtype=np.float32)
     return cv2.getPerspectiveTransform(corners, target), (width, height)
 
 
 def draw_calibration(frame, corners):
+    candidates = find_blue_dot_candidates(frame)
+    for center, _, _ in candidates:
+        cv2.circle(frame, tuple(np.rint(center).astype(int)), 12, (0, 255, 255), 2)
     if corners is not None:
         cv2.polylines(frame, [corners.astype(np.int32)], True, (0, 255, 0), 2)
-    cv2.putText(frame, "FINDING CANVAS - keep it clear", (10, 30),
+    cv2.putText(frame, f"BLUE DOT CANDIDATES: {len(candidates)} / 4", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
 
 def get_ink_mask(hsv):
-    return cv2.inRange(hsv, (95, 60, 40), (130, 255, 255))
+    return cv2.inRange(hsv, BLUE_LOWER, BLUE_UPPER)
 
 
 def get_arm_mask(hsv):
@@ -429,18 +507,20 @@ async def show_camera(websocket):
             if not ok:
                 break
 
-            if canvas_transform is None:
-                corners = calibrator.update(cv2.cvtColor(frame, cv2.COLOR_BGR2HSV))
-                if corners is not None:
-                    canvas_transform, canvas_size = get_canvas_transform(corners)
+            corners = calibrator.update(frame)
+            if corners is not None:
+                first_lock = canvas_transform is None
+                canvas_transform, canvas_size = get_canvas_transform(corners)
+                if first_lock:
                     print(f"Canvas corners: {corners.astype(int).tolist()}")
-                else:
-                    draw_calibration(frame, calibrator.samples[-1] if calibrator.samples else None)
-                    cv2.imshow(window, frame)
-                    if should_quit():
-                        return
-                    await asyncio.sleep(0.01)
-                    continue
+
+            if canvas_transform is None:
+                draw_calibration(frame, calibrator.samples[-1] if calibrator.samples else None)
+                cv2.imshow(window, frame)
+                if should_quit():
+                    return
+                await asyncio.sleep(0.01)
+                continue
 
             # Everything below works on a top-down view of just the canvas.
             frame = cv2.warpPerspective(frame, canvas_transform, canvas_size)
