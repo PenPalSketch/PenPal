@@ -279,6 +279,23 @@ def trace_path(mask, start, spacing=20):
     return path if len(path) > 1 else [start, farthest_pixel(distance)]
 
 
+def largest_piece(mask):
+    contour = largest_contour(mask)
+    piece = np.zeros_like(mask)
+    if contour is not None:
+        cv2.drawContours(piece, [contour], -1, 255, -1)
+    return cv2.bitwise_and(mask, piece)
+
+
+def is_closed_loop(mask, min_hole_area):
+    # A loop encloses a hole; tiny holes are just gaps inside a thick stroke.
+    contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    if hierarchy is None:
+        return False
+    return any(parent >= 0 and cv2.contourArea(contour) >= min_hole_area
+               for contour, (_, _, _, parent) in zip(contours, hierarchy[0]))
+
+
 class Line:
     def __init__(self, mask, path, start_source):
         self.mask = mask
@@ -293,7 +310,8 @@ class LineDetector:
     """Find the ink added each time the arm enters and leaves the canvas."""
 
     def __init__(self, settle_frames=8, min_line_area=60, min_start_area=15, max_start_area=600,
-                 max_start_distance=60, end_length=40, min_arm_motion=40):
+                 max_start_distance=60, end_length=40, min_arm_motion=40, min_loop_hole_area=150,
+                 loop_cut_radius=10):
         self.settle_frames = settle_frames
         self.min_line_area = min_line_area
         self.min_start_area = min_start_area
@@ -301,6 +319,8 @@ class LineDetector:
         self.max_start_distance = max_start_distance
         self.end_length = end_length
         self.min_arm_motion = min_arm_motion
+        self.min_loop_hole_area = min_loop_hole_area
+        self.loop_cut_radius = loop_cut_radius
         self.lines = []
         self.known_ink = None
         self.state = "READY"
@@ -313,6 +333,8 @@ class LineDetector:
         self.start = None
         self.start_decided = False
         self.start_candidate = None
+        # Where the pen was when new ink first appeared, the best guess for where a loop started.
+        self.first_ink_tip = None
         self.arm_tips = []
 
     def update(self, hsv, arm_contour, arm_tip):
@@ -363,6 +385,8 @@ class LineDetector:
             visible = cv2.bitwise_and(visible, cv2.bitwise_not(arm))
         fresh = (visible > 0) & (self.first_seen < 0)
         self.first_seen[fresh] = self.frame_index
+        if self.first_ink_tip is None and arm_tip is not None and np.count_nonzero(fresh) >= self.min_start_area:
+            self.first_ink_tip = arm_tip
         if not self.start_decided:
             self._check_start(visible > 0, arm > 0, fresh, arm_tip)
         self.frame_index += 1
@@ -405,12 +429,14 @@ class LineDetector:
         cv2.drawContours(keep, contours, -1, 255, -1)
         mask = cv2.bitwise_and(new_ink, keep)
         # Trace only the biggest piece; the others are still kept in the mask.
-        main_piece = np.zeros_like(mask)
-        cv2.drawContours(main_piece, [max(contours, key=cv2.contourArea)], -1, 255, -1)
-        main_piece = cv2.bitwise_and(mask, main_piece)
+        main_piece = largest_piece(mask)
 
-        start, start_source = self._choose_start(main_piece)
-        line = Line(mask, trace_path(main_piece, start), start_source)
+        loop = self._trace_loop(main_piece) if is_closed_loop(main_piece, self.min_loop_hole_area) else None
+        if loop is not None:
+            line = Line(mask, *loop)
+        else:
+            start, start_source = self._choose_start(main_piece)
+            line = Line(mask, trace_path(main_piece, start), start_source)
         self.lines.append(line)
         self.known_ink = cv2.bitwise_or(self.known_ink, line.mask)
         return line
@@ -434,6 +460,44 @@ class LineDetector:
                 along_b = np.dot(np.subtract(end_b, end_a), motion)
                 return (end_a if along_b > 0 else end_b), "arm direction"
         return end_a, "guess"
+
+    def _trace_loop(self, mask):
+        """Path around a closed loop, or None if it can't be opened up into a line."""
+        # A loop has no ends, so the start is where the pen was seen starting or first drew.
+        if self.start is not None:
+            start, start_source = nearest_pixel(mask, self.start), "seen"
+        elif self.first_ink_tip is not None:
+            start, start_source = nearest_pixel(mask, self.first_ink_tip), "pen position"
+        else:
+            return None
+
+        # Cutting the loop at the start leaves a line with one end on each side of the start.
+        opened = mask.copy()
+        cv2.circle(opened, start, self.loop_cut_radius, 0, -1)
+        opened = largest_piece(opened)
+        if not opened.any() or is_closed_loop(opened, self.min_loop_hole_area):
+            return None
+        end_a, end_b = find_endpoints(opened)
+
+        # The pen left along the side drawn first; the other side was only closed at the very end.
+        reveal_a = self._reveal_time_near(opened, end_a)
+        reveal_b = self._reveal_time_near(opened, end_b)
+        if reveal_a != reveal_b:
+            first_end = end_a if reveal_a < reveal_b else end_b
+        else:
+            first_end = self._end_arm_left_toward(start, end_a, end_b)
+            start_source += " + arm direction"
+        return [start] + trace_path(opened, first_end) + [start], start_source
+
+    def _end_arm_left_toward(self, start, end_a, end_b):
+        # The first arm position clearly away from the start shows which way the pen went.
+        for tip in self.arm_tips:
+            if tip is not None and np.hypot(tip[0] - start[0], tip[1] - start[1]) >= self.min_arm_motion:
+                motion = np.subtract(tip, start)
+                along_a = np.dot(np.subtract(end_a, start), motion)
+                along_b = np.dot(np.subtract(end_b, start), motion)
+                return end_a if along_a >= along_b else end_b
+        return end_a
 
     def _reveal_time_near(self, mask, end):
         near = (geodesic_distance(mask, end) >= 0) & (geodesic_distance(mask, end) <= self.end_length)
@@ -467,6 +531,11 @@ def draw_lines(frame, line_detector):
     for line in line_detector.lines[:-1]:
         draw_path(frame, line.path, (0, 140, 140))
     drawing = line_detector.state != "READY"
+    if drawing:
+        # Outline the new ink seen so far in this stroke.
+        seen = np.where(line_detector.first_seen >= 0, 255, 0).astype(np.uint8)
+        contours, _ = cv2.findContours(seen, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(frame, contours, -1, (0, 255, 255), 2)
     if line_detector.lines:
         latest = line_detector.lines[-1]
         draw_path(frame, latest.path, (0, 255, 255))
