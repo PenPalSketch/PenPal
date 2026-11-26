@@ -158,20 +158,69 @@ def get_ink_mask(hsv):
     return cv2.inRange(hsv, BLUE_LOWER, BLUE_UPPER)
 
 
-def get_arm_mask(hsv):
+class PaperCalibrator:
+    """Learn the colour of the empty paper from the middle of the canvas, which is assumed blank."""
+
+    def __init__(self, frames=10, center_fraction=0.5, min_margin=10, spread_margin=4):
+        self.frames = frames
+        self.center_fraction = center_fraction
+        self.min_margin = min_margin
+        self.spread_margin = spread_margin
+        self.samples = []
+        # Lab b channel (lower is bluer) of the paper, and how much bluer ink must be.
+        self.paper_b = None
+        self.max_ink_b = None
+
+    def center(self, frame):
+        height, width = frame.shape[:2]
+        margin_x = round(width * (1 - self.center_fraction) / 2)
+        margin_y = round(height * (1 - self.center_fraction) / 2)
+        return (margin_x, margin_y), (width - margin_x, height - margin_y)
+
+    def update(self, frame):
+        """Collect the paper colour for a few frames; return True once it is known."""
+        if self.paper_b is not None:
+            return True
+        (left, top), (right, bottom) = self.center(frame)
+        lab = cv2.cvtColor(frame[top:bottom, left:right], cv2.COLOR_BGR2LAB)
+        self.samples.append(lab[:, :, 2].ravel())
+        if len(self.samples) < self.frames:
+            return False
+        b = np.concatenate(self.samples).astype(np.float32)
+        self.paper_b = float(np.median(b))
+        # Median absolute deviation, so a stray mark in the middle doesn't widen the paper's range.
+        spread = 1.4826 * float(np.median(np.abs(b - self.paper_b)))
+        self.max_ink_b = self.paper_b - max(self.min_margin, self.spread_margin * spread)
+        return True
+
+    def ink_mask(self, frame, hsv):
+        # Shade darkens the paper but doesn't make it bluer, so ink must be blue and bluer than the paper.
+        lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+        bluer = np.where(lab[:, :, 2] < self.max_ink_b, 255, 0).astype(np.uint8)
+        return cv2.bitwise_and(get_ink_mask(hsv), bluer)
+
+
+def draw_paper_calibration(frame, paper):
+    corner_a, corner_b = paper.center(frame)
+    cv2.rectangle(frame, corner_a, corner_b, (0, 255, 255), 2)
+    cv2.putText(frame, f"PAPER COLOUR: {len(paper.samples)} / {paper.frames} - keep the middle empty",
+                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+
+
+def get_arm_mask(hsv, ink):
     # The canvas is white, so anything saturated or dark is the arm, except the blue ink.
     not_white = cv2.bitwise_or(
         cv2.inRange(hsv, (0, 60, 0), (180, 255, 255)),
         cv2.inRange(hsv, (0, 0, 0), (180, 255, 90)),
     )
-    mask = cv2.bitwise_and(not_white, cv2.bitwise_not(get_ink_mask(hsv)))
+    mask = cv2.bitwise_and(not_white, cv2.bitwise_not(ink))
     kernel = np.ones((7, 7), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
 
-def get_arm(hsv, min_area_fraction=0.01):
-    contour = largest_contour(get_arm_mask(hsv))
+def get_arm(hsv, ink, min_area_fraction=0.01):
+    contour = largest_contour(get_arm_mask(hsv, ink))
     height, width = hsv.shape[:2]
     if contour is None or cv2.contourArea(contour) < min_area_fraction * width * height:
         return None, None
@@ -337,9 +386,8 @@ class LineDetector:
         self.first_ink_tip = None
         self.arm_tips = []
 
-    def update(self, hsv, arm_contour, arm_tip):
+    def update(self, ink, arm_contour, arm_tip):
         """Return a new Line when one has just been detected, otherwise None."""
-        ink = get_ink_mask(hsv)
         if self.known_ink is None:
             # Ink already on the canvas at startup isn't a new line.
             if arm_contour is None:
@@ -531,11 +579,6 @@ def draw_lines(frame, line_detector):
     for line in line_detector.lines[:-1]:
         draw_path(frame, line.path, (0, 140, 140))
     drawing = line_detector.state != "READY"
-    if drawing:
-        # Outline the new ink seen so far in this stroke.
-        seen = np.where(line_detector.first_seen >= 0, 255, 0).astype(np.uint8)
-        contours, _ = cv2.findContours(seen, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(frame, contours, -1, (0, 255, 255), 2)
     if line_detector.lines:
         latest = line_detector.lines[-1]
         draw_path(frame, latest.path, (0, 255, 255))
@@ -565,6 +608,7 @@ async def show_camera(websocket):
     arm_tracker = ArmDirectionTracker()
     line_detector = LineDetector()
     calibrator = CanvasCalibrator()
+    paper = PaperCalibrator()
     canvas_transform = None
     try:
         if not camera.isOpened():
@@ -593,10 +637,21 @@ async def show_camera(websocket):
 
             # Everything below works on a top-down view of just the canvas.
             frame = cv2.warpPerspective(frame, canvas_transform, canvas_size)
+            if paper.paper_b is None:
+                if paper.update(frame):
+                    print(f"Paper colour: Lab b {paper.paper_b:.0f}, ink below {paper.max_ink_b:.0f}")
+                draw_paper_calibration(frame, paper)
+                cv2.imshow(window, frame)
+                if should_quit():
+                    return
+                await asyncio.sleep(0.01)
+                continue
+
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            arm_contour, arm_tip = get_arm(hsv)
+            ink = paper.ink_mask(frame, hsv)
+            arm_contour, arm_tip = get_arm(hsv, ink)
             arm_direction, arm_motion = arm_tracker.update(arm_tip)
-            new_line = line_detector.update(hsv, arm_contour, arm_tip)
+            new_line = line_detector.update(ink, arm_contour, arm_tip)
             if new_line is not None:
                 print(f"New line #{len(line_detector.lines)}: {cv2.countNonZero(new_line.mask)} px, "
                       f"start {new_line.path[0]} ({new_line.start_source})")
