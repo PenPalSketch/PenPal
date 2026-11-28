@@ -497,6 +497,7 @@ async def show_camera(websocket):
     line_detector = LineDetector()
     calibrator = CanvasCalibrator()
     canvas_transform = None
+    resume = None
     try:
         if not camera.isOpened():
             print("Could not open camera")
@@ -527,7 +528,20 @@ async def show_camera(websocket):
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             arm_contour, arm_tip = get_arm(hsv)
             arm_direction, arm_motion = arm_tracker.update(arm_tip)
-            new_line = line_detector.update(hsv, arm_contour, arm_tip)
+            new_line = None
+            if resume is None:
+                waiting_for_baseline = line_detector.known_ink is None
+                new_line = line_detector.update(hsv, arm_contour, arm_tip)
+                if waiting_for_baseline and line_detector.known_ink is not None:
+                    await websocket.send(json.dumps({"type": "READY"}))
+            elif resume.done():
+                if resume.result() != "READY":
+                    await websocket.close(code=1008, reason="Expected READY after LINE")
+                    return
+                resume = None
+                # Ink the plotter added while the detector was paused is already on the page.
+                line_detector.known_ink = cv2.bitwise_or(line_detector.known_ink, get_ink_mask(hsv))
+                await websocket.send(json.dumps({"type": "READY"}))
             if new_line is not None:
                 print(f"New line #{len(line_detector.lines)}: {cv2.countNonZero(new_line.mask)} px, "
                       f"start {new_line.path[0]} ({new_line.start_source})")
@@ -539,6 +553,7 @@ async def show_camera(websocket):
                     "width": width,
                     "height": height,
                 }))
+                resume = asyncio.create_task(websocket.recv())
 
             draw_arm(frame, arm_contour, arm_tip, arm_direction, arm_motion)
             draw_lines(frame, line_detector)
@@ -551,6 +566,9 @@ async def show_camera(websocket):
     except ConnectionClosed:
         pass
     finally:
+        if resume is not None:
+            resume.cancel()
+            await asyncio.gather(resume, return_exceptions=True)
         camera.release()
         cv2.destroyAllWindows()
         print("Camera closed")

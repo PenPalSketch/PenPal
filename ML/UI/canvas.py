@@ -10,7 +10,7 @@ import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 from websockets.exceptions import ConnectionClosed, WebSocketException
 from websockets.sync.client import connect
-from ML.UI.interactive_predict import load_model, predict_turn
+from ML.UI import interactive_predict
 from HW.Plotter.gcode import (PAPER_BOUNDS, CanvasToPaper, corner_dots_gcode,
                               strokes_to_gcode, write_gcode)
 from HW.Plotter.send import FakeGrbl, PlotterError, send_gcode
@@ -20,6 +20,12 @@ CANVAS_WIDTH = 700
 CANVAS_HEIGHT = 400
 CAMERA_URL = "ws://127.0.0.1:8765"
 
+# A running Streamlit session can retain the predictor from before this hook was added.
+if not hasattr(interactive_predict, "record_model_turn"):
+    from importlib import reload
+
+    reload(interactive_predict)
+
 # State (equivalent to the "let" variables from JS)
 ss = st.session_state
 ss.setdefault("canvas_key", 0)                    # increase to get a fresh, empty canvas
@@ -27,6 +33,7 @@ ss.setdefault("temperature", 0.25)
 ss.setdefault("all_raw_lines", [])                 # contains lines in form of lists of points: list([x, y]), !! not deltas
 ss.setdefault("strokes", [])                       # contains all the strokes [dx, dy, p1, p2, p3]]
 ss.setdefault("object_count", 0)                   # canvas objs already converted to strokes
+ss.setdefault("drawing_done", False)
 
 ss.setdefault("x", 0)
 ss.setdefault("y", 0)
@@ -38,9 +45,11 @@ ss.setdefault("user_lines", [])
 # the model's latest turn, for the plotter
 ss.setdefault("model_strokes", [])     # [dx, dy, p1, p2, p3] in canvas pixels
 ss.setdefault("model_anchor", (0, 0))  # canvas point the first delta starts from
+ss.setdefault("model_turns", [(ss.model_anchor, ss.model_strokes)] if ss.model_strokes else [])
 
 # Update Functions
 def restart():
+    ss.drawing_done = False
     ss.canvas_key += 1 # new key results in a new empty canvas
     ss.object_count = 0
 
@@ -52,6 +61,7 @@ def restart():
 
     ss.x = ss.y = 0
     ss.model_strokes = []
+    ss.model_turns = []
     ss.pop("plot_pending", None)
     ss.pop("camera_size", None)
     ss.pop("camera_pending", None)
@@ -59,8 +69,16 @@ def restart():
 
 def disconnect_camera():
     socket = ss.pop("camera_socket", None)
+    ss.pop("camera_waiting", None)
     if socket is not None:
         socket.close()
+
+
+def finish_drawing():
+    ss.drawing_done = True
+    ss.pop("plot_pending", None)
+    ss.pop("camera_pending", None)
+    disconnect_camera()
 
 
 def change_source():
@@ -71,6 +89,7 @@ def change_source():
 def connect_camera():
     try:
         ss.camera_socket = connect(CAMERA_URL, open_timeout=1, close_timeout=1)
+        ss.camera_waiting = True
     except (OSError, TimeoutError, WebSocketException):
         st.error("Could not connect. Start the camera server with python CV/server.py.")
 
@@ -84,7 +103,7 @@ source = st.radio("Drawing input", ("Camera", "Draw in Streamlit"),
 col1, col2 = st.columns(2, vertical_alignment="bottom")
 
 with col1:
-    if source == "Camera":
+    if source == "Camera" and not ss.drawing_done:
         if "camera_socket" in ss:
             st.button("Disconnect camera", on_click=disconnect_camera)
         elif st.button("Connect camera"):
@@ -92,6 +111,8 @@ with col1:
             if "camera_socket" in ss:
                 st.rerun()
     st.button("Clear", on_click=restart, use_container_width=True)
+    st.button("Done", on_click=finish_drawing, disabled=ss.drawing_done,
+              use_container_width=True)
 with col2:
     st.slider(
         "Temperature",
@@ -101,6 +122,8 @@ with col2:
         key="temperature")
 
 dry_run = st.checkbox("Practice run (pretend Arduino)", key="plot_dry_run")
+if ss.drawing_done:
+    st.success("Drawing complete.")
 
 with st.expander("Plotter calibration"):
     st.caption(
@@ -144,7 +167,7 @@ with st.expander("Plotter calibration"):
 
 # load model once when streamlit program starts:
 if "model" not in ss:
-    ss.model = load_model()
+    ss.model = interactive_predict.load_model()
 
 
 # equivalent to mouseDragged
@@ -183,7 +206,9 @@ def play_user_stroke(raw_line, update_canvas=True):
     ss.all_raw_lines.append(raw_line)
     ss.strokes.extend(stroke)
     ss.x, ss.y = line[-1]
-    predict_turn(update_canvas=update_canvas)
+    interactive_predict.predict_turn(update_canvas=update_canvas)
+    if ss.model_strokes and update_canvas:
+        ss.model_turns.append((ss.model_anchor, ss.model_strokes))
     return True
 
 
@@ -192,35 +217,41 @@ def poll_camera():
     try:
         message = json.loads(ss.camera_socket.recv(timeout=0))
     except TimeoutError:
-        st.caption("Camera connected. Move your hand out of frame after drawing a blue line.")
+        if not ss.get("camera_waiting"):
+            st.caption("Ready for a blue line. Move your hand out of frame when finished.")
         return
     except ConnectionClosed:
         disconnect_camera()
         st.rerun()
 
+    if message.get("type") == "READY":
+        ss.pop("camera_waiting", None)
+        return
     if message.get("type") != "LINE":
         return
 
     size = (message["width"], message["height"])
-    if size != ss.get("camera_size"):
-        restart()
-        ss.camera_size = size
-
-    ss.camera_pending = message["path"]
+    width, height = ss.setdefault("camera_size", size)
+    ss.camera_pending = [(x * width / size[0], y * height / size[1])
+                         for x, y in message["path"]]
+    ss.camera_waiting = True
     st.rerun()
 
 
 width, height = CANVAS_WIDTH, CANVAS_HEIGHT
 plot_pending = ss.pop("plot_pending", False)
+camera_turn = False
+resume_camera = False
 if source == "Camera":
     if (path := ss.pop("camera_pending", None)) is not None:
+        camera_turn = resume_camera = True
         if not play_user_stroke(path, update_canvas=False):
             st.info("The camera detected ink but could not trace a line. Try a longer line.")
         elif not ss.model_strokes:
             st.info("The model produced no drawable continuation. Try drawing another line.")
         plot_pending = bool(ss.model_strokes)
     width, height = ss.get("camera_size", (CANVAS_WIDTH, CANVAS_HEIGHT))
-else:
+elif not ss.drawing_done:
     canvas_result = st_canvas(
         initial_drawing={"version": "4.4.0", "objects": ss.generated_lines + ss.user_lines},
         drawing_mode="freedraw",
@@ -250,25 +281,36 @@ else:
         st.info("The model produced no drawable continuation. Try drawing another line.")
 
 
-# Plotter preview for the model's latest completed turn.
-if ss.model_strokes:
+# Show the accumulated drawing and the latest job's travel moves.
+if ss.all_raw_lines or ss.model_strokes:
     st.subheader("Plotter preview")
     to_paper = CanvasToPaper(width, height)
-    gcode = strokes_to_gcode(to_paper.strokes(ss.model_strokes), to_paper.point(*ss.model_anchor),
-                             max_steps=len(ss.model_strokes))
+
+    def turn_gcode(anchor, strokes):
+        return strokes_to_gcode(to_paper.strokes(strokes), to_paper.point(*anchor),
+                                max_steps=len(strokes))
+
+    gcode = turn_gcode(ss.model_anchor, ss.model_strokes) if ss.model_strokes else []
     sim = simulate(gcode)
     human = [[to_paper.point(x, y) for x, y in line] for line in ss.all_raw_lines]
-
-    out = ROOT / "HW" / "Plotter" / "output" / "latest.gcode"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    write_gcode(gcode, out)
-
-    st.pyplot(render(sim, overlay=human))
-    st.caption(summary(sim) + f" Saved to {out.relative_to(ROOT)}")
+    prior_turns = ss.model_turns[:-1] if ss.model_strokes and not camera_turn else ss.model_turns
+    prior_ink = [
+        step
+        for anchor, strokes in prior_turns
+        for step in simulate(turn_gcode(anchor, strokes))["steps"]
+        if step.moves and step.pen_down
+    ]
+    preview = {**sim, "steps": prior_ink + sim["steps"]}
+    st.pyplot(render(preview, overlay=human))
+    if gcode:
+        out = ROOT / "HW" / "Plotter" / "output" / "latest.gcode"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        write_gcode(gcode, out)
+        st.caption("Latest turn. " + summary(sim) + f" Saved to {out.relative_to(ROOT)}")
     for w in sim["warnings"]:
         st.warning(w)
 
-    if plot_pending:
+    if plot_pending and gcode:
         bar = st.progress(0.0, "Connecting to the plotter...")
 
         def show_progress(i, n, line):
@@ -276,10 +318,24 @@ if ss.model_strokes:
 
         try:
             send_gcode(gcode, ser=FakeGrbl() if dry_run else None, on_progress=show_progress)
-            st.success("Practice run done." if dry_run else "Done. The pen should be back at the home corner.")
+            if camera_turn:
+                ss.model_turns.append((ss.model_anchor, ss.model_strokes))
+                interactive_predict.record_model_turn()
+            st.success("Practice run done." if dry_run else "Plotter returned home.")
         except PlotterError as e:
             st.error(str(e))
+            if camera_turn:
+                resume_camera = False
+                ss.model_strokes = []
+                disconnect_camera()
+                st.info("Return the pen to the home corner before reconnecting the camera.")
 
+
+if resume_camera and "camera_socket" in ss:
+    try:
+        ss.camera_socket.send("READY")
+    except ConnectionClosed:
+        disconnect_camera()
 
 if source == "Camera" and "camera_socket" in ss:
     poll_camera()

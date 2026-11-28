@@ -45,7 +45,10 @@ for a model continuation. Use **Clear** to reset the Streamlit drawing or
 **Disconnect camera** to close the connection.
 
 Streamlit previews the generated G-code and sends each new continuation to the
-plotter once. Enable **Practice run (pretend Arduino)** before drawing to test
+plotter once. Start with the pen at the home corner. The camera pauses stroke
+detection during plotting and resumes once the pen has lifted and returned home.
+Wait for **Ready for a blue line** before starting the next stroke. Enable
+**Practice run (pretend Arduino)** before drawing to test
 the workflow without moving the plotter. Select **Draw in Streamlit** to use the
 mouse canvas.
 

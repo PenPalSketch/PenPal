@@ -21,10 +21,11 @@ def load_model():
     return model
 
 def predict_turn(update_canvas=True):
-    """Generate a reply and add its drawn moves to the shared sketch."""
+    """Generate a reply. The canvas records it immediately, the camera after plotting."""
     model = ss.model
     state = model.update(model.zero_input(), model.zeroState())
-    state = model.updateStrokes(ss.strokes, state, len(ss.strokes) - 1)
+    if len(ss.strokes) > 1:
+        state = model.updateStrokes(ss.strokes, state, len(ss.strokes) - 1)
     previous = ss.strokes[-1]
     ss.model_anchor = (ss.x, ss.y)
 
@@ -62,9 +63,14 @@ def predict_turn(update_canvas=True):
     ss.model_strokes = moves[:last_drawn_move]
     if ss.model_strokes:
         ss.model_strokes[-1][2:] = [0, 1, 0]
-        ss.strokes.extend(ss.model_strokes)
-        ss.x = ss.model_anchor[0] + sum(move[0] for move in ss.model_strokes)
-        ss.y = ss.model_anchor[1] + sum(move[1] for move in ss.model_strokes)
+        if update_canvas:
+            record_model_turn()
+
+
+def record_model_turn():
+    ss.strokes.extend(ss.model_strokes)
+    ss.x = ss.model_anchor[0] + sum(move[0] for move in ss.model_strokes)
+    ss.y = ss.model_anchor[1] + sum(move[1] for move in ss.model_strokes)
 
 
 def draw_line(x1, y1, x2, y2, color="#000000", width=2):
